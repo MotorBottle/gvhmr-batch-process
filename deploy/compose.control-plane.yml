@@ -1,0 +1,93 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: gvhmr_batch_process
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "${HOST_POSTGRES_PORT:-15432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d gvhmr_batch_process"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - gvhmr-control
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${HOST_REDIS_PORT:-16379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - gvhmr-control
+
+  minio:
+    image: minio/minio:RELEASE.2025-02-18T16-25-55Z
+    env_file:
+      - ./env/minio.env
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+    ports:
+      - "${HOST_MINIO_PORT:-19000}:9000"
+      - "${HOST_MINIO_CONSOLE_PORT:-19001}:9001"
+    networks:
+      - gvhmr-control
+
+  migrate:
+    build:
+      context: ..
+      dockerfile: deploy/docker/api.Dockerfile
+    env_file:
+      - ./env/api.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["alembic", "upgrade", "head"]
+    networks:
+      - gvhmr-control
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/docker/api.Dockerfile
+    env_file:
+      - ./env/api.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - api-data:/var/lib/gvhmr-batch-process
+    ports:
+      - "${HOST_API_PORT:-18000}:8000"
+    networks:
+      - gvhmr-control
+
+  scheduler:
+    build:
+      context: ..
+      dockerfile: deploy/docker/scheduler.Dockerfile
+    env_file:
+      - ./env/scheduler.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - gvhmr-control

@@ -1,0 +1,13 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "gvhmr-runner"
+version = "0.1.0"
+description = "Runner and cache planning for GVHMR Batch Process."
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gvhmr_runner"]

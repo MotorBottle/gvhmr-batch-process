@@ -1,0 +1,18 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "gvhmr-batch-common"
+version = "0.1.0"
+description = "Shared enums, schemas, and utilities for GVHMR Batch Process."
+requires-python = ">=3.10"
+dependencies = [
+  "pydantic>=2.6,<3.0",
+  "sqlalchemy>=2.0,<3.0",
+  "psycopg[binary]>=3.1,<4.0",
+  "minio>=7.2,<8.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gvhmr_batch_common"]

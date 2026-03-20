@@ -1,0 +1,18 @@
+services:
+  api:
+    command: ["uvicorn", "gvhmr_batch_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    volumes:
+      - ../packages/common:/app/packages/common
+      - ../packages/gvhmr_runner:/app/packages/gvhmr_runner
+      - ../services/api:/app/services/api
+
+  scheduler:
+    volumes:
+      - ../packages/common:/app/packages/common
+      - ../services/scheduler:/app/services/scheduler
+
+  worker:
+    volumes:
+      - ../packages/common:/app/packages/common
+      - ../packages/gvhmr_runner:/app/packages/gvhmr_runner
+      - ../services/worker:/app/services/worker

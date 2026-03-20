@@ -1,0 +1,12 @@
+name: gvhmr-batch-process
+
+networks:
+  gvhmr-control:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  minio-data:
+  api-data:
+  worker-scratch:
+

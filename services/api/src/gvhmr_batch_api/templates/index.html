@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ app_name }}</title>
+    <style>
+        :root {
+            color-scheme: light;
+            --bg: #f5f4ef;
+            --card: #fffdf8;
+            --line: #d9d2c3;
+            --text: #1f1b16;
+            --muted: #6b6257;
+            --accent: #1f6f5f;
+            --accent-soft: #dcefe7;
+        }
+
+        body {
+            margin: 0;
+            font-family: "IBM Plex Sans", "Noto Sans SC", sans-serif;
+            background: linear-gradient(180deg, #f7f1e6 0%, var(--bg) 100%);
+            color: var(--text);
+        }
+
+        main {
+            max-width: 1120px;
+            margin: 0 auto;
+            padding: 32px 20px 48px;
+        }
+
+        h1, h2 {
+            margin: 0 0 12px;
+        }
+
+        p {
+            color: var(--muted);
+        }
+
+        .hero {
+            padding: 28px;
+            border: 1px solid var(--line);
+            background: var(--card);
+            border-radius: 20px;
+            box-shadow: 0 16px 40px rgba(31, 27, 22, 0.06);
+            margin-bottom: 24px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 16px;
+        }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            padding: 18px;
+        }
+
+        form {
+            display: grid;
+            gap: 10px;
+        }
+
+        input, textarea, select, button {
+            font: inherit;
+            border-radius: 10px;
+            border: 1px solid var(--line);
+            padding: 10px 12px;
+            background: white;
+        }
+
+        button {
+            border: none;
+            background: var(--accent);
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        button.secondary {
+            background: var(--accent-soft);
+            color: var(--accent);
+        }
+
+        pre {
+            white-space: pre-wrap;
+            word-break: break-word;
+            background: #171717;
+            color: #f5f5f5;
+            border-radius: 14px;
+            padding: 14px;
+            min-height: 120px;
+            overflow: auto;
+        }
+
+        .meta {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            font-size: 14px;
+        }
+
+        .pill {
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: var(--accent-soft);
+            color: var(--accent);
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+<main>
+    <section class="hero">
+        <h1>{{ app_name }}</h1>
+        <p>当前页面用于确认单机单卡 Phase 2 垂直切片。当前 backend 模式：<strong>{{ backend_mode }}</strong>。</p>
+        <div class="meta">
+            <span class="pill">API-first</span>
+            <span class="pill">Batch-first</span>
+            <span class="pill">Cluster-ready</span>
+            <span class="pill">Phase 2 Vertical Slice</span>
+        </div>
+    </section>
+
+    <section class="grid">
+        <div class="card">
+            <h2>上传视频</h2>
+            <form id="uploadForm">
+                <input type="file" id="uploadFile" name="video" required>
+                <button type="submit">POST /uploads</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <h2>创建 Job</h2>
+            <form id="jobForm">
+                <input type="text" id="jobUploadId" placeholder="upload_id" required>
+                <select id="jobStaticCamera">
+                    <option value="true">static_camera = true</option>
+                    <option value="false">static_camera = false</option>
+                </select>
+                <select id="jobVideoRender">
+                    <option value="false">video_render = false</option>
+                    <option value="true">video_render = true</option>
+                </select>
+                <input type="text" id="jobVideoType" placeholder="video_type，默认 none" value="none">
+                <input type="number" id="jobFmm" placeholder="f_mm，可留空">
+                <select id="jobPriority">
+                    <option value="normal">priority = normal</option>
+                    <option value="high">priority = high</option>
+                    <option value="low">priority = low</option>
+                </select>
+                <button type="submit">POST /jobs</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <h2>创建 Batch</h2>
+            <form id="batchForm">
+                <input type="text" id="batchName" placeholder="batch 名称" required>
+                <textarea id="batchUploadIds" rows="6" placeholder="每行一个 upload_id" required></textarea>
+                <button type="submit">POST /batches</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <h2>查询 Job</h2>
+            <form id="jobLookupForm">
+                <input type="text" id="lookupJobId" placeholder="job_id" required>
+                <button type="submit" class="secondary">GET /jobs/{id}</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <h2>查询 Batch</h2>
+            <form id="batchLookupForm">
+                <input type="text" id="lookupBatchId" placeholder="batch_id" required>
+                <button type="submit" class="secondary">GET /batches/{id}</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <h2>健康检查</h2>
+            <form id="healthForm">
+                <button type="submit" class="secondary">GET /health</button>
+            </form>
+        </div>
+    </section>
+
+    <section class="card" style="margin-top: 16px;">
+        <h2>响应输出</h2>
+        <pre id="output">等待操作...</pre>
+    </section>
+</main>
+<script src="{{ url_for('static', path='app.js') }}"></script>
+</body>
+</html>
