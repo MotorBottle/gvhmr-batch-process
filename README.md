@@ -40,7 +40,7 @@
 - `POST /batches` / `GET /batches/{id}`
 - `GET /jobs/{id}/artifacts` / `GET /artifacts/{id}/download`
 - `GET /workers` / `GET /health`
-- Scheduler 基于 Postgres 轮询分配任务
+- Scheduler 已切到 `Postgres 真源 + Redis 消息通道` 分发模型
 - Worker 已接入真实 GVHMR 执行链路，并写回真实 `hmr4d_results.pt` 与预处理产物
 - 上游 `GVHMR` 以 git submodule 固定到 `088caff492aa38c2d82cea363b78a3c65a83118f`
 
@@ -133,5 +133,6 @@ make test-batch TEST_BATCH_ARGS="--video-render --video-type skeleton_only"
 
 ## 下一步
 
-- 引入 Redis 消息通道，替换当前 Postgres polling 调度路径
-- 完成失败重试、运行中取消强化、多机 worker 验证
+- 完成第二台多 GPU worker 节点接入与多机验证
+- 完成失败重试、运行中取消强化、worker 断线恢复
+- 对 worker 运行时依赖做瘦身，减少镜像构建和分发成本

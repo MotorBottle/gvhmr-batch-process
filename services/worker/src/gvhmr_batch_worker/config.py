@@ -2,6 +2,7 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from gvhmr_batch_common.queue import DEFAULT_REDIS_NAMESPACE
 
 PINNED_GVHMR_REF = "088caff492aa38c2d82cea363b78a3c65a83118f"
 
@@ -17,6 +18,7 @@ class WorkerSettings(BaseSettings):
     job_poll_interval_seconds: int = 2
     postgres_dsn: str = "postgresql://postgres:postgres@postgres:5432/gvhmr_batch_process"
     redis_url: str = "redis://redis:6379/0"
+    redis_namespace: str = DEFAULT_REDIS_NAMESPACE
     minio_endpoint: str = "minio:9000"
     minio_access_key: str = "minioadmin"
     minio_secret_key: str = "minioadmin"

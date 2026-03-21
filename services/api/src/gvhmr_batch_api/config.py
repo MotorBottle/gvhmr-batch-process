@@ -4,6 +4,8 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from gvhmr_batch_common.queue import DEFAULT_REDIS_NAMESPACE
+
 
 class APISettings(BaseSettings):
     app_name: str = "GVHMR Batch Process"
@@ -14,6 +16,8 @@ class APISettings(BaseSettings):
     storage_root: Path = Path(".data")
     max_upload_size_mb: int = 2048
     postgres_dsn: str = "postgresql://postgres:postgres@postgres:5432/gvhmr_batch_process"
+    redis_url: str = "redis://redis:6379/0"
+    redis_namespace: str = DEFAULT_REDIS_NAMESPACE
     minio_endpoint: str = "minio:9000"
     minio_access_key: str = "minioadmin"
     minio_secret_key: str = "minioadmin"

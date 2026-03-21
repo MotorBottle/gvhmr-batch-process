@@ -86,10 +86,11 @@
 - 单机单卡 Docker Compose 垂直切片
 - Postgres + MinIO 控制平面真落地
 - Scheduler + Worker 真正联调
+- Redis 消息通道已进入任务分发关键路径
 - 真实 GVHMR runner 接入，已验证生成 `hmr4d_results.pt`
 - 上游 `GVHMR` 已以 submodule 形式固定到 commit `088caff492aa38c2d82cea363b78a3c65a83118f`
 
 当前仍保留的过渡性约束：
 
-- Scheduler 关键路径仍基于 Postgres polling
-- Redis 仍未进入关键调度路径
+- 当前仅验证单机单卡 Redis 分发链路
+- 多机 worker 和多 GPU 并发还需要下一阶段实测

@@ -9,6 +9,7 @@ from threading import Lock
 from gvhmr_batch_common.control_plane import ControlPlaneStore, JobExecutionPayload
 from gvhmr_batch_common.database import create_engine_from_dsn, create_session_factory
 from gvhmr_batch_common.enums import ArtifactKind, WorkerStatus
+from gvhmr_batch_common.queue import RedisDispatchQueue
 from gvhmr_batch_common.storage import MinIOStorage
 from gvhmr_runner import GVHMRRunner, RunnerCancelled, RunnerJobSpec
 from gvhmr_batch_worker.config import WorkerSettings
@@ -139,24 +140,49 @@ async def work_loop(
     store: ControlPlaneStore,
     state: WorkerRuntimeState,
 ) -> None:
+    queue = RedisDispatchQueue(settings.redis_url, namespace=settings.redis_namespace)
     runner = GVHMRRunner(
         settings.upstream_gvhmr_ref,
         gvhmr_root=settings.gvhmr_root,
         runner_entry_module=settings.runner_entry_module,
     )
+    idle_announced = False
     while True:
         if state.get_running_job_id():
-            await asyncio.sleep(settings.job_poll_interval_seconds)
+            idle_announced = False
+            await asyncio.sleep(1)
             continue
 
         try:
-            payload = store.get_scheduled_job_for_worker(settings.worker_id)
-            if payload is None:
-                await asyncio.sleep(settings.job_poll_interval_seconds)
+            if not idle_announced:
+                await asyncio.to_thread(queue.announce_worker_idle, settings.worker_id)
+                idle_announced = True
+
+            job_id = await asyncio.to_thread(
+                queue.pop_worker_job,
+                worker_id=settings.worker_id,
+                timeout_seconds=settings.job_poll_interval_seconds,
+            )
+            if job_id is None:
                 continue
 
+            payload = store.get_scheduled_job_by_id_for_worker(
+                worker_id=settings.worker_id,
+                job_id=job_id,
+            )
+            if payload is None:
+                logger.warning(
+                    "Received redis dispatch for job=%s but no scheduled assignment remained for worker=%s.",
+                    job_id,
+                    settings.worker_id,
+                )
+                idle_announced = False
+                continue
+
+            await asyncio.to_thread(queue.mark_worker_busy, settings.worker_id)
             state.set_running_job_id(payload.job.id)
             store.mark_job_running(job_id=payload.job.id, worker_id=settings.worker_id)
+            idle_announced = False
             logger.info("Worker claimed job=%s.", payload.job.id)
             await asyncio.to_thread(
                 execute_assigned_job,
@@ -169,7 +195,7 @@ async def work_loop(
         except Exception:
             state.set_running_job_id(None)
             logger.exception("Worker loop failed.")
-            await asyncio.sleep(settings.job_poll_interval_seconds)
+            await asyncio.sleep(1)
 
 
 async def run_worker(settings: WorkerSettings) -> None:
@@ -184,9 +210,16 @@ async def run_worker(settings: WorkerSettings) -> None:
     )
     store = ControlPlaneStore(session_factory, storage)
     state = WorkerRuntimeState()
+    store.upsert_worker_heartbeat(
+        worker_id=settings.worker_id,
+        node_name=settings.node_name,
+        gpu_slot=settings.gpu_slot,
+        status=WorkerStatus.IDLE,
+        running_job_id=None,
+    )
 
     logger.info(
-        "Worker started: worker_id=%s node=%s gpu_slot=%s backend=%s gvhmr_root=%s model_root=%s scratch_root=%s",
+        "Worker started: worker_id=%s node=%s gpu_slot=%s backend=%s gvhmr_root=%s model_root=%s scratch_root=%s redis_namespace=%s",
         settings.worker_id,
         settings.node_name,
         settings.gpu_slot,
@@ -194,6 +227,7 @@ async def run_worker(settings: WorkerSettings) -> None:
         settings.gvhmr_root,
         settings.model_root,
         settings.scratch_root,
+        settings.redis_namespace,
     )
     await asyncio.gather(
         heartbeat_loop(settings=settings, store=store, state=state),

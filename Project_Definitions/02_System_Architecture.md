@@ -80,8 +80,8 @@ flowchart LR
 当前迭代说明：
 
 - Redis 服务已纳入本机 compose
-- 当前关键调度路径仍以 `Scheduler + Postgres polling` 为主
-- Redis 在本迭代中不作为唯一真源或唯一调度触发器
+- Redis 已进入关键调度路径，承担 job 入队、scheduler 唤醒、worker 专属队列下发
+- Postgres 仍然是元数据真源，Redis 不承担长期状态真源角色
 
 ### MinIO
 
@@ -101,7 +101,7 @@ flowchart LR
 
 当前迭代说明：
 
-- 调度周期固定为 `2s`
+- scheduler 通过 Redis 信号被唤醒，并在需要时做批量 dispatch
 - 调度规则为 `priority DESC + created_at ASC`
 - 当前只验证单实例 scheduler
 

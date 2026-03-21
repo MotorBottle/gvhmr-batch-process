@@ -38,6 +38,16 @@ class UploadedArtifact:
     storage_key: str
 
 
+@dataclass(slots=True)
+class DispatchDecision:
+    scheduled: bool
+    requeue_job: bool
+    requeue_worker: bool
+    reason: str
+    job: JobRecord | None = None
+    worker: WorkerHeartbeatRecord | None = None
+
+
 def _priority_order() -> case:
     return case(
         (JobORM.priority == JobPriority.HIGH.value, 3),
@@ -312,6 +322,24 @@ class ControlPlaneStore:
                 for item in session.scalars(query).all()
             ]
 
+    def list_queued_jobs(self) -> list[JobRecord]:
+        with self._session_factory() as session:
+            query = (
+                select(JobORM)
+                .where(JobORM.status == JobStatus.QUEUED.value)
+                .order_by(_priority_order().desc(), JobORM.created_at.asc())
+            )
+            return [_to_job_record(item) for item in session.scalars(query).all()]
+
+    def list_scheduled_jobs(self) -> list[JobRecord]:
+        with self._session_factory() as session:
+            query = (
+                select(JobORM)
+                .where(JobORM.status == JobStatus.SCHEDULED.value)
+                .order_by(JobORM.updated_at.asc(), JobORM.created_at.asc())
+            )
+            return [_to_job_record(item) for item in session.scalars(query).all()]
+
     def upsert_worker_heartbeat(
         self,
         *,
@@ -397,6 +425,94 @@ class ControlPlaneStore:
             session.commit()
         return failed_job_ids
 
+    def assign_job_to_worker(
+        self,
+        *,
+        job_id: str,
+        worker_id: str,
+        offline_after_seconds: int,
+    ) -> DispatchDecision:
+        cutoff = utcnow() - timedelta(seconds=offline_after_seconds)
+
+        with self._session_factory() as session:
+            worker = session.get(WorkerHeartbeatORM, worker_id)
+            if worker is None:
+                return DispatchDecision(
+                    scheduled=False,
+                    requeue_job=True,
+                    requeue_worker=False,
+                    reason=f"Worker {worker_id} does not exist.",
+                )
+
+            has_active_assignment = session.scalars(
+                select(JobORM)
+                .where(
+                    JobORM.assigned_worker_id == worker_id,
+                    JobORM.status.in_([JobStatus.SCHEDULED.value, JobStatus.RUNNING.value]),
+                )
+                .order_by(JobORM.updated_at.asc())
+            ).first()
+            if (
+                worker.status != WorkerStatus.IDLE.value
+                or worker.last_heartbeat_at < cutoff
+                or has_active_assignment is not None
+            ):
+                return DispatchDecision(
+                    scheduled=False,
+                    requeue_job=True,
+                    requeue_worker=False,
+                    reason=f"Worker {worker_id} is not dispatchable.",
+                )
+
+            job = session.get(JobORM, job_id)
+            if job is None:
+                return DispatchDecision(
+                    scheduled=False,
+                    requeue_job=False,
+                    requeue_worker=True,
+                    reason=f"Job {job_id} does not exist.",
+                )
+            if job.status != JobStatus.QUEUED.value:
+                return DispatchDecision(
+                    scheduled=False,
+                    requeue_job=False,
+                    requeue_worker=True,
+                    reason=f"Job {job_id} is not queued.",
+                    job=_to_job_record(job),
+                    worker=_to_worker_record(worker),
+                )
+
+            now = utcnow()
+            job.status = JobStatus.SCHEDULED.value
+            job.assigned_worker_id = worker.id
+            job.assigned_gpu_slot = worker.gpu_slot
+            job.updated_at = now
+
+            worker.status = WorkerStatus.BUSY.value
+            worker.running_job_id = job.id
+
+            assignment = JobAssignmentORM(
+                id=new_id("asg"),
+                job_id=job.id,
+                worker_id=worker.id,
+                assigned_at=now,
+            )
+            session.add(assignment)
+
+            if job.batch_id:
+                self._refresh_batch_state(session, job.batch_id)
+            session.commit()
+            session.refresh(job)
+            session.refresh(worker)
+            return DispatchDecision(
+                scheduled=True,
+                requeue_job=False,
+                requeue_worker=False,
+                reason="scheduled",
+                job=_to_job_record(job),
+                worker=_to_worker_record(worker),
+            )
+
     def schedule_next_job(self, *, offline_after_seconds: int) -> tuple[JobRecord, WorkerHeartbeatRecord] | None:
         cutoff = utcnow() - timedelta(seconds=offline_after_seconds)
 
@@ -444,6 +560,38 @@ class ControlPlaneStore:
             session.refresh(worker)
             return _to_job_record(job), _to_worker_record(worker)
 
+    def revert_scheduled_job(self, *, job_id: str, worker_id: str) -> JobRecord | None:
+        with self._session_factory() as session:
+            job = session.get(JobORM, job_id)
+            if job is None:
+                return None
+            if job.assigned_worker_id != worker_id or job.status != JobStatus.SCHEDULED.value:
+                return _to_job_record(job)
+
+            now = utcnow()
+            job.status = JobStatus.QUEUED.value
+            job.assigned_worker_id = None
+            job.assigned_gpu_slot = None
+            job.updated_at = now
+
+            worker = session.get(WorkerHeartbeatORM, worker_id)
+            if worker is not None and worker.status != WorkerStatus.OFFLINE.value:
+                worker.status = WorkerStatus.IDLE.value
+                if worker.running_job_id == job_id:
+                    worker.running_job_id = None
+
+            assignment = session.scalars(
+                select(JobAssignmentORM).where(JobAssignmentORM.job_id == job_id)
+            ).first()
+            if assignment is not None:
+                session.delete(assignment)
+
+            if job.batch_id:
+                self._refresh_batch_state(session, job.batch_id)
+            session.commit()
+            session.refresh(job)
+            return _to_job_record(job)
+
     def get_scheduled_job_for_worker(self, worker_id: str) -> JobExecutionPayload | None:
         with self._session_factory() as session:
             job = session.scalars(
@@ -453,6 +601,24 @@ class ControlPlaneStore:
                     JobORM.status == JobStatus.SCHEDULED.value,
                 )
                 .order_by(JobORM.updated_at.asc())
+            ).first()
+            if job is None:
+                return None
+
+            upload = session.get(UploadORM, job.upload_id)
+            if upload is None:
+                raise RuntimeError(f"Upload {job.upload_id} not found for job {job.id}")
+
+            return JobExecutionPayload(job=_to_job_record(job), upload=_to_upload_record(upload))
+
+    def get_scheduled_job_by_id_for_worker(self, *, worker_id: str, job_id: str) -> JobExecutionPayload | None:
+        with self._session_factory() as session:
+            job = session.scalars(
+                select(JobORM).where(
+                    JobORM.id == job_id,
+                    JobORM.assigned_worker_id == worker_id,
+                    JobORM.status == JobStatus.SCHEDULED.value,
+                )
             ).first()
             if job is None:
                 return None

@@ -85,7 +85,7 @@
 当前状态：
 
 - 已完成单机单卡最小联调版本
-- 当前采用 `Scheduler + Postgres polling`，Redis 仍未进入关键路径
+- 已完成 `API 入队 -> Redis 信号 -> Scheduler 分发 -> Worker 专属队列 -> 执行` 主链路
 - 已验证：
   - `queued -> running -> succeeded`
   - `queued -> canceled`

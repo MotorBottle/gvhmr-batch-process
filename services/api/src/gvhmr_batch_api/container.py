@@ -3,6 +3,7 @@ from __future__ import annotations
 from gvhmr_batch_api.config import APISettings
 from gvhmr_batch_api.store import SQLControlPlaneStore
 from gvhmr_batch_common.database import create_engine_from_dsn, create_session_factory
+from gvhmr_batch_common.queue import RedisDispatchQueue
 from gvhmr_batch_common.storage import MinIOStorage
 
 _settings = APISettings()
@@ -16,6 +17,7 @@ _storage = MinIOStorage(
     secure=_settings.minio_secure,
 )
 _store = SQLControlPlaneStore(_session_factory, _storage)
+_queue = RedisDispatchQueue(_settings.redis_url, namespace=_settings.redis_namespace)
 
 
 def get_settings() -> APISettings:
@@ -24,3 +26,7 @@ def get_settings() -> APISettings:
 
 def get_store() -> SQLControlPlaneStore:
     return _store
+
+
+def get_queue() -> RedisDispatchQueue:
+    return _queue
