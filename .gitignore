@@ -19,6 +19,9 @@ tmp/
 .tmp/
 .idea/
 .vscode/
+models/**
+!models/.gitkeep
+!models/README.md
 test/uploads/**
 !test/uploads/.gitkeep
 test/results/**

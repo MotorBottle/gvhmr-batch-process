@@ -14,6 +14,7 @@
 ├── Makefile
 ├── Project_Definitions/
 ├── deploy/
+├── models/
 ├── packages/
 │   ├── common/
 │   └── gvhmr_runner/
@@ -73,10 +74,25 @@ docker compose \
 
 当前 worker 的本机前提：
 
-- 默认复用旧仓库模型目录：`/home/synapath/gvhmr/models`
-- 默认复用旧仓库 body model 目录：`/home/synapath/gvhmr/body_models`
+- 仓库根目录下需要存在 `models/`，用于放置所有 checkpoint 和 body models
 - 首次 `worker` 从零构建 GPU 镜像会比较慢
 - 上游 `GVHMR` 当前没有发布 tag，因此本仓库通过 submodule 固定 commit 而不是跟随最新 `main`
+
+当前默认模型目录结构：
+
+```text
+models/
+├── dpvo/dpvo.pth
+├── gvhmr/gvhmr_siga24_release.ckpt
+├── hmr2/epoch=10-step=25000.ckpt
+├── vitpose/vitpose-h-multi-coco.pth
+├── yolo/yolov8x.pt
+└── body_models/
+    ├── smpl/SMPL_{GENDER}.pkl
+    └── smplx/SMPLX_{GENDER}.npz
+```
+
+这些文件不会在 Docker build 中自动下载。请按 [models/README.md](models/README.md) 的说明自行下载并放到对应位置。
 
 ## 快速开始
 

@@ -12,6 +12,7 @@ repo/
 │   ├── compose.dev.yml
 │   ├── docker/
 │   └── env/
+├── models/
 ├── packages/
 │   ├── common/
 │   └── gvhmr_runner/
@@ -134,8 +135,9 @@ repo/
 
 ### 本地模型卷
 
+- 仓库根目录 `models/`
 - 各类 checkpoint
-- body models
+- `body_models` 作为 `models/` 的子目录
 
 ### 本地 scratch
 
@@ -152,8 +154,7 @@ repo/
 ## 7. 当前单机实现约束
 
 - 当前 compose 默认宿主机端口使用高位端口，避免与旧仓库冲突
-- worker 当前默认复用：
-  - `/home/synapath/gvhmr/models`
-  - `/home/synapath/gvhmr/body_models`
+- worker 当前默认挂载仓库根目录 `models/` 到容器内 `inputs/checkpoints`
+- `models/` 不纳入 git，用户需按文档自行下载和放置模型资产
 - worker 当前直接从 CUDA 基础镜像和 `third_party/GVHMR` submodule 自行构建
 - worker 启动需等待 `migrate` 完成，避免在表尚未创建时抢跑

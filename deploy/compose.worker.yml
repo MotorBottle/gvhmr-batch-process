@@ -13,12 +13,8 @@ services:
     volumes:
       - worker-scratch:/var/lib/gvhmr-batch-process
       - type: bind
-        source: ${MODEL_ROOT:-/home/synapath/gvhmr/models}
+        source: ${MODEL_ROOT:-../models}
         target: /app/gvhmr/inputs/checkpoints
-        read_only: true
-      - type: bind
-        source: ${BODY_MODEL_ROOT:-/home/synapath/gvhmr/body_models}
-        target: /app/gvhmr/inputs/checkpoints/body_models
         read_only: true
     gpus: all
     depends_on:
