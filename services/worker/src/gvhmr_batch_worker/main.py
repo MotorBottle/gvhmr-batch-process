@@ -11,6 +11,7 @@ from gvhmr_batch_common.database import create_engine_from_dsn, create_session_f
 from gvhmr_batch_common.enums import ArtifactKind, WorkerStatus
 from gvhmr_batch_common.queue import RedisDispatchQueue
 from gvhmr_batch_common.storage import MinIOStorage
+from gvhmr_batch_common.utils import utcnow
 from gvhmr_runner import GVHMRRunner, RunnerCancelled, RunnerJobSpec
 from gvhmr_batch_worker.config import WorkerSettings
 
@@ -210,6 +211,30 @@ async def run_worker(settings: WorkerSettings) -> None:
     )
     store = ControlPlaneStore(session_factory, storage)
     state = WorkerRuntimeState()
+    store.ensure_worker_identity_available(
+        worker_id=settings.worker_id,
+        node_name=settings.node_name,
+        gpu_slot=settings.gpu_slot,
+        stale_after_seconds=settings.identity_stale_after_seconds,
+    )
+    database_now = store.get_database_utcnow()
+    worker_now = utcnow()
+    clock_skew_seconds = abs((worker_now - database_now).total_seconds())
+    if clock_skew_seconds >= settings.clock_skew_fail_seconds:
+        raise RuntimeError(
+            "Worker clock skew is too large. "
+            f"worker_now={worker_now.isoformat()} db_now={database_now.isoformat()} "
+            f"skew_seconds={clock_skew_seconds:.3f} "
+            f"threshold={settings.clock_skew_fail_seconds}"
+        )
+    if clock_skew_seconds >= settings.clock_skew_warn_seconds:
+        logger.warning(
+            "Worker clock skew is above warning threshold: worker_now=%s db_now=%s skew_seconds=%.3f threshold=%s",
+            worker_now.isoformat(),
+            database_now.isoformat(),
+            clock_skew_seconds,
+            settings.clock_skew_warn_seconds,
+        )
     store.upsert_worker_heartbeat(
         worker_id=settings.worker_id,
         node_name=settings.node_name,

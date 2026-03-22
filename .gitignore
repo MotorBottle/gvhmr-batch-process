@@ -19,6 +19,8 @@ tmp/
 .tmp/
 .idea/
 .vscode/
+deploy/env/*.env
+!deploy/env/*.example.env
 models/**
 !models/.gitkeep
 !models/README.md

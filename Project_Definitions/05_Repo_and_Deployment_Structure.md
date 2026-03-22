@@ -9,8 +9,11 @@ repo/
 │   ├── compose.base.yml
 │   ├── compose.control-plane.yml
 │   ├── compose.worker.yml
+│   ├── compose.worker.remote.yml
+│   ├── compose.worker.remote.2gpu.yml
 │   ├── compose.dev.yml
 │   ├── docker/
+│   ├── scripts/
 │   └── env/
 ├── models/
 ├── packages/
@@ -90,6 +93,20 @@ repo/
 - 模型卷
 - scratch 卷
 
+### compose.worker.remote.yml
+
+- 远端单 worker 节点
+- 不依赖本地 compose network
+- 直接访问控制平面机器的 `Postgres/Redis/MinIO`
+- 使用显式 host scratch 路径
+
+### compose.worker.remote.2gpu.yml
+
+- 远端 2 GPU worker 节点
+- 一卡一 worker 容器
+- 同一 `node_name`，不同 `gpu_slot`
+- 独立 host scratch 路径
+
 ### compose.dev.yml
 
 - 源码挂载
@@ -97,6 +114,12 @@ repo/
 - 开发环境覆盖配置
 
 ## 4. 环境变量边界
+
+### 命名约定
+
+- `deploy/env/*.example.env`：仓库内模板
+- `deploy/env/*.env`：本机/目标机实际运行配置
+- 通过 `make env-init` 从模板生成本地运行配置
 
 ### 控制平面
 
@@ -112,10 +135,15 @@ repo/
 - `WORKER_ID`
 - `NODE_NAME`
 - `GPU_SLOT`
+- `WORKER_VISIBLE_DEVICE`
 - `MODEL_ROOT`
 - `SCRATCH_ROOT`
+- `WORKER_SCRATCH_HOST_PATH`
 - `UPSTREAM_GVHMR_REF`
 - `RUNNER_ENTRY_MODULE`
+- `CLOCK_SKEW_WARN_SECONDS`
+- `CLOCK_SKEW_FAIL_SECONDS`
+- `IDENTITY_STALE_AFTER_SECONDS`
 
 ### 宿主机端口覆盖
 
@@ -144,6 +172,8 @@ repo/
 - 临时视频
 - 中间文件
 - 局部 cache
+- 远端多 worker 节点默认每个 worker 使用独立 host scratch 目录
+- 如果 Docker data root 已经在本地 SSD，上单 worker 时不强制再单独准备一块盘
 
 ## 6. 迁移原则
 
@@ -158,3 +188,20 @@ repo/
 - `models/` 不纳入 git，用户需按文档自行下载和放置模型资产
 - worker 当前直接从 CUDA 基础镜像和 `third_party/GVHMR` submodule 自行构建
 - worker 启动需等待 `migrate` 完成，避免在表尚未创建时抢跑
+- `deploy/env/*.env` 不纳入 git，需通过模板初始化
+
+## 8. 多机 Worker 约定
+
+- 远端 worker 通过部署时 env 自我声明 `worker_id / node_name / gpu_slot`
+- 统一命名规则：
+  - `node_name = <机器名>`
+  - `worker_id = <node_name>-gpu<gpu_slot>`
+- `gpu_slot` 对应宿主机 `nvidia-smi` 序号
+- 启动时会校验：
+  - `worker_id` 未被其他在线 worker 占用
+  - `node_name + gpu_slot` 未被其他在线 worker 占用
+- 远端 worker 依赖宿主机时间同步；worker 启动时会检测与 Postgres 的时钟漂移
+- 远端 worker 机器需要放通到控制平面机器的：
+  - Postgres
+  - Redis
+  - MinIO API

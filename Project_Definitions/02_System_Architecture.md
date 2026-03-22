@@ -115,6 +115,7 @@ flowchart LR
 - 上传产物
 - 更新 job 状态
 - 定期上报 heartbeat
+- 启动时校验身份唯一性与时钟漂移
 
 ### 模型卷
 
@@ -127,6 +128,7 @@ flowchart LR
 - 临时工作目录
 - 缓存中间文件
 - 可在 worker 节点上局部复用
+- 多 worker 节点建议一 worker 对应一个宿主机 scratch 目录
 
 ## 4. 单机多卡方案
 
@@ -145,6 +147,15 @@ flowchart LR
 - 控制平面固定部署在一台机器
 - 每台 GPU 机器只部署 worker compose
 - 所有 worker 指向同一个 Postgres/Redis/MinIO
+- worker 身份采用：
+  - `node_name = <机器名>`
+  - `worker_id = <node_name>-gpu<gpu_slot>`
+- `gpu_slot` 对应宿主机 `nvidia-smi` 序号
+- 远端机器必须放通到控制平面的：
+  - Postgres
+  - Redis
+  - MinIO API
+- 远端机器必须有宿主机级别的时间同步，容器继承宿主机时钟
 
 ## 6. K8s 迁移边界
 

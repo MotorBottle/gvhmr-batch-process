@@ -1,0 +1,26 @@
+name: gvhmr-batch-worker-remote
+
+services:
+  worker:
+    image: ${WORKER_IMAGE:-gvhmr-batch-process-worker:latest}
+    build:
+      context: ..
+      dockerfile: deploy/docker/worker.Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./env/worker.remote.env
+    environment:
+      GVHMR_BATCH_WORKER_WORKER_ID: ${WORKER_NODE_NAME}-gpu${WORKER_GPU_SLOT}
+      GVHMR_BATCH_WORKER_NODE_NAME: ${WORKER_NODE_NAME}
+      GVHMR_BATCH_WORKER_GPU_SLOT: ${WORKER_GPU_SLOT}
+      NVIDIA_VISIBLE_DEVICES: ${WORKER_VISIBLE_DEVICE:-0}
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    volumes:
+      - type: bind
+        source: ${WORKER_SCRATCH_HOST_PATH}
+        target: /var/lib/gvhmr-batch-process
+      - type: bind
+        source: ${MODEL_ROOT}
+        target: /app/gvhmr/inputs/checkpoints
+        read_only: true
+    gpus: all

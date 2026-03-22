@@ -27,6 +27,9 @@ class WorkerSettings(BaseSettings):
     model_root: Path = Path("/app/gvhmr/inputs/checkpoints")
     gvhmr_root: Path = Path("/app/gvhmr")
     scratch_root: Path = Path("/var/lib/gvhmr-batch-process")
+    identity_stale_after_seconds: int = 30
+    clock_skew_warn_seconds: int = 5
+    clock_skew_fail_seconds: int = 30
     upstream_gvhmr_ref: str = PINNED_GVHMR_REF
     mock_duration_seconds: int = 5
     mock_fail: bool = False

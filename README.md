@@ -48,6 +48,7 @@
 
 ```bash
 git submodule update --init --recursive
+make env-init
 
 docker compose \
   -f deploy/compose.base.yml \
@@ -94,6 +95,135 @@ models/
 
 这些文件不会在 Docker build 中自动下载。请按 [models/README.md](models/README.md) 的说明自行下载并放到对应位置。
 
+## Env 文件约定
+
+`deploy/env/` 统一采用两层：
+
+- `*.example.env`：提交到仓库，作为模板
+- `*.env`：本机或目标机器实际使用的运行配置，不纳入 git
+
+初始化方式：
+
+```bash
+make env-init
+```
+
+如需强制用模板覆盖本地 env：
+
+```bash
+make env-init-force
+```
+
+当前模板包括：
+
+- `deploy/env/api.example.env`
+- `deploy/env/minio.example.env`
+- `deploy/env/scheduler.example.env`
+- `deploy/env/worker.example.env`
+- `deploy/env/worker.remote.example.env`
+
+## 远端 Worker 部署
+
+当前仓库已经提供远端 `worker-only` compose 模板：
+
+- 单 worker 节点：[deploy/compose.worker.remote.yml](deploy/compose.worker.remote.yml)
+- 2 GPU 节点：[deploy/compose.worker.remote.2gpu.yml](deploy/compose.worker.remote.2gpu.yml)
+- 环境变量模板：[deploy/env/worker.remote.example.env](deploy/env/worker.remote.example.env)
+- 主机预检脚本：[deploy/scripts/check_worker_host.sh](deploy/scripts/check_worker_host.sh)
+
+推荐流程：
+
+1. 在远端 worker 机器上复制仓库
+2. 运行 `make env-init`
+3. 编辑 `deploy/env/worker.remote.env`，按机器实际情况填写控制平面地址、模型目录、GPU 映射和 scratch 路径
+4. 运行预检脚本：
+
+```bash
+bash deploy/scripts/check_worker_host.sh deploy/env/worker.remote.env
+```
+
+5. 启动单 worker 或 2 GPU worker：
+
+```bash
+docker compose --env-file deploy/env/worker.remote.env -f deploy/compose.worker.remote.yml up -d --build
+```
+
+```bash
+docker compose --env-file deploy/env/worker.remote.env -f deploy/compose.worker.remote.2gpu.yml up -d --build
+```
+
+也可以直接用：
+
+```bash
+make compose-remote-worker-config WORKER_REMOTE_ENV=deploy/env/worker.remote.env
+make compose-remote-worker-up WORKER_REMOTE_ENV=deploy/env/worker.remote.env
+make compose-remote-worker-2gpu-config WORKER_REMOTE_ENV=deploy/env/worker.remote.env
+make compose-remote-worker-2gpu-up WORKER_REMOTE_ENV=deploy/env/worker.remote.env
+```
+
+### Worker 命名规则
+
+统一约定：
+
+- `node_name = <机器名>`
+- `worker_id = <node_name>-gpu<gpu_slot>`
+- `gpu_slot = 宿主机 nvidia-smi 中的 GPU 序号`
+
+示例：
+
+- 单卡机器：
+  - `WORKER_NODE_NAME=worker-bj-02`
+  - `WORKER_GPU_SLOT=0`
+  - `GVHMR_BATCH_WORKER_WORKER_ID=worker-bj-02-gpu0`
+- 2 卡机器：
+  - `worker-bj-03-gpu0`
+  - `worker-bj-03-gpu1`
+
+当前 worker 启动时会做两类校验：
+
+- `worker_id` 已被别的 `node_name/gpu_slot` 占用时拒绝启动
+- `node_name + gpu_slot` 已被别的 `worker_id` 占用时拒绝启动
+
+### 防火墙与网络
+
+远端 worker 到控制平面机器至少需要访问：
+
+- Postgres：默认 `15432/tcp`
+- Redis：默认 `16379/tcp`
+- MinIO API：默认 `19000/tcp`
+
+MinIO Console 默认 `19001/tcp` 只给人工管理使用，worker 不依赖它。
+
+### Scratch 策略
+
+如果宿主机的 Docker data root 已经在本地 SSD 上，单 worker 节点不必额外再找一块单独磁盘。
+但对远端多 worker 节点，仍然建议每个 worker 显式绑定独立的宿主机 scratch 目录，例如：
+
+- `/srv/gvhmr-batch-process/scratch/gpu0`
+- `/srv/gvhmr-batch-process/scratch/gpu1`
+
+原因不是“必须更快”，而是：
+
+- 每张卡的临时文件互不干扰
+- 容易看磁盘占用和清理残留
+- worker 出问题时更容易排障
+
+当前远端 compose 模板默认就按“每个 worker 一个 host scratch 目录”来写。
+
+### 时间同步
+
+远端 worker 的时间同步必须由宿主机保证。容器会继承宿主机时钟。
+
+- 建议启用 `systemd-timesyncd` 或 `chrony`
+- 预检脚本会检查主机 NTP 状态
+- worker 启动时还会把自己的时间和 Postgres 时间做一次比对
+- 漂移超过阈值默认拒绝启动，避免 heartbeat 和超时判定出错
+
+当前默认阈值：
+
+- warning: `5s`
+- fail: `30s`
+
 ## 快速开始
 
 当前仓库已经从“定义已固化 + 骨架”进入“可运行的 Phase 2 垂直切片”状态。推荐先阅读：
@@ -133,6 +263,6 @@ make test-batch TEST_BATCH_ARGS="--video-render --video-type skeleton_only"
 
 ## 下一步
 
-- 完成第二台多 GPU worker 节点接入与多机验证
+- 在第二台多 GPU worker 节点上完成真实多机验证
 - 完成失败重试、运行中取消强化、worker 断线恢复
 - 对 worker 运行时依赖做瘦身，减少镜像构建和分发成本

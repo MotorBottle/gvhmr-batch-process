@@ -1,0 +1,50 @@
+name: gvhmr-batch-worker-remote
+
+services:
+  worker-gpu0:
+    image: ${WORKER_IMAGE:-gvhmr-batch-process-worker:latest}
+    build:
+      context: ..
+      dockerfile: deploy/docker/worker.Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./env/worker.remote.env
+    environment:
+      GVHMR_BATCH_WORKER_WORKER_ID: ${WORKER_NODE_NAME}-gpu0
+      GVHMR_BATCH_WORKER_NODE_NAME: ${WORKER_NODE_NAME}
+      GVHMR_BATCH_WORKER_GPU_SLOT: 0
+      NVIDIA_VISIBLE_DEVICES: ${GPU0_VISIBLE_DEVICE:-0}
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    volumes:
+      - type: bind
+        source: ${GPU0_SCRATCH_HOST_PATH}
+        target: /var/lib/gvhmr-batch-process
+      - type: bind
+        source: ${MODEL_ROOT}
+        target: /app/gvhmr/inputs/checkpoints
+        read_only: true
+    gpus: all
+
+  worker-gpu1:
+    image: ${WORKER_IMAGE:-gvhmr-batch-process-worker:latest}
+    build:
+      context: ..
+      dockerfile: deploy/docker/worker.Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./env/worker.remote.env
+    environment:
+      GVHMR_BATCH_WORKER_WORKER_ID: ${WORKER_NODE_NAME}-gpu1
+      GVHMR_BATCH_WORKER_NODE_NAME: ${WORKER_NODE_NAME}
+      GVHMR_BATCH_WORKER_GPU_SLOT: 1
+      NVIDIA_VISIBLE_DEVICES: ${GPU1_VISIBLE_DEVICE:-1}
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    volumes:
+      - type: bind
+        source: ${GPU1_SCRATCH_HOST_PATH}
+        target: /var/lib/gvhmr-batch-process
+      - type: bind
+        source: ${MODEL_ROOT}
+        target: /app/gvhmr/inputs/checkpoints
+        read_only: true
+    gpus: all

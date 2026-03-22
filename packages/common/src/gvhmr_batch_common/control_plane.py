@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from datetime import timedelta
 from pathlib import Path
 from typing import Iterable
@@ -137,6 +138,47 @@ class ControlPlaneStore:
         with self._session_factory() as session:
             session.execute(text("SELECT 1"))
         return True
+
+    def get_database_utcnow(self) -> datetime:
+        with self._session_factory() as session:
+            return session.execute(text("SELECT CURRENT_TIMESTAMP")).scalar_one()
+
+    def ensure_worker_identity_available(
+        self,
+        *,
+        worker_id: str,
+        node_name: str,
+        gpu_slot: int,
+        stale_after_seconds: int,
+    ) -> None:
+        cutoff = utcnow() - timedelta(seconds=stale_after_seconds)
+        with self._session_factory() as session:
+            existing_worker = session.get(WorkerHeartbeatORM, worker_id)
+            if (
+                existing_worker is not None
+                and existing_worker.last_heartbeat_at >= cutoff
+                and existing_worker.status != WorkerStatus.OFFLINE.value
+                and (existing_worker.node_name != node_name or existing_worker.gpu_slot != gpu_slot)
+            ):
+                raise RuntimeError(
+                    f'worker_id "{worker_id}" is already registered by '
+                    f'{existing_worker.node_name}/gpu{existing_worker.gpu_slot}.'
+                )
+
+            conflicting_slot = session.scalars(
+                select(WorkerHeartbeatORM).where(
+                    WorkerHeartbeatORM.node_name == node_name,
+                    WorkerHeartbeatORM.gpu_slot == gpu_slot,
+                    WorkerHeartbeatORM.id != worker_id,
+                    WorkerHeartbeatORM.last_heartbeat_at >= cutoff,
+                    WorkerHeartbeatORM.status != WorkerStatus.OFFLINE.value,
+                )
+            ).first()
+            if conflicting_slot is not None:
+                raise RuntimeError(
+                    f'node_name "{node_name}" gpu_slot "{gpu_slot}" is already occupied by '
+                    f'worker_id "{conflicting_slot.id}".'
+                )
 
     def ping_storage(self) -> bool:
         if self._storage is None:
