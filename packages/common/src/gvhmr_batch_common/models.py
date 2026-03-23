@@ -45,6 +45,7 @@ class JobORM(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     priority: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
     static_camera: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    use_dpvo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     video_render: Mapped[bool] = mapped_column(Boolean, nullable=False)
     video_type: Mapped[str] = mapped_column(String(255), nullable=False)
     f_mm: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -100,4 +101,3 @@ class JobAssignmentORM(Base):
     assigned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-

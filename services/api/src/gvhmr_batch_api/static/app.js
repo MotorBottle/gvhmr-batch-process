@@ -41,6 +41,7 @@ document.getElementById("jobForm").addEventListener("submit", async (event) => {
   const payload = {
     upload_id: document.getElementById("jobUploadId").value.trim(),
     static_camera: document.getElementById("jobStaticCamera").value === "true",
+    use_dpvo: document.getElementById("jobUseDpvo").value === "true",
     video_render: document.getElementById("jobVideoRender").value === "true",
     video_type: document.getElementById("jobVideoType").value.trim() || "none",
     f_mm: document.getElementById("jobFmm").value ? Number(document.getElementById("jobFmm").value) : null,
@@ -71,11 +72,12 @@ document.getElementById("batchForm").addEventListener("submit", async (event) =>
     name: document.getElementById("batchName").value.trim(),
     items: uploadIds.map((uploadId) => ({
       upload_id: uploadId,
-      static_camera: true,
-      video_render: false,
-      video_type: "none",
-      f_mm: null,
-      priority: "normal",
+      static_camera: document.getElementById("batchStaticCamera").value === "true",
+      use_dpvo: document.getElementById("batchUseDpvo").value === "true",
+      video_render: document.getElementById("batchVideoRender").value === "true",
+      video_type: document.getElementById("batchVideoType").value.trim() || "none",
+      f_mm: document.getElementById("batchFmm").value ? Number(document.getElementById("batchFmm").value) : null,
+      priority: document.getElementById("batchPriority").value,
     })),
   };
 
@@ -120,4 +122,3 @@ document.getElementById("healthForm").addEventListener("submit", async (event) =
     render({ error: error.message });
   }
 });
-

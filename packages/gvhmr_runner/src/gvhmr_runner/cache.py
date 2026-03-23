@@ -23,13 +23,16 @@ def build_core_cache_key(
     *,
     video_sha256: str,
     static_camera: bool,
+    use_dpvo: bool,
     f_mm: int | None,
     upstream_version: str,
 ) -> str:
+    effective_use_dpvo = use_dpvo and not static_camera
     return _digest(
         {
             "video_sha256": video_sha256,
             "static_camera": static_camera,
+            "use_dpvo": effective_use_dpvo,
             "f_mm": f_mm,
             "upstream_version": upstream_version,
         }
@@ -49,4 +52,3 @@ def build_render_cache_key(
             "video_type": normalize_video_type(video_type),
         }
     )
-

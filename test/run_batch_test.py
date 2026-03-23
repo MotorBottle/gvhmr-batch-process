@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import mimetypes
 import sys
 import time
 import uuid
+from datetime import datetime
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -25,6 +27,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS_DIR, help="Directory for downloaded results.")
     parser.add_argument("--batch-name", default=None, help="Optional batch name override.")
     parser.add_argument("--static-camera", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--use-dpvo", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--video-render", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--video-type", default="none")
     parser.add_argument("--f-mm", type=int, default=None)
@@ -113,6 +116,60 @@ def save_json(path: Path, payload: dict | list) -> None:
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def save_csv(path: Path, rows: list[dict[str, str]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not rows:
+        path.write_text("", encoding="utf-8")
+        return
+
+    fieldnames = [
+        "job_id",
+        "result_dir_name",
+        "result_dir",
+        "upload_id",
+        "upload_filename",
+        "source_path",
+        "status",
+    ]
+    with path.open("w", encoding="utf-8", newline="") as fp:
+        writer = csv.DictWriter(fp, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def safe_label(value: str | None) -> str:
+    if not value:
+        return "unknown"
+    cleaned = value.replace("/", "_").replace("\\", "_").replace(" ", "_")
+    return "".join(ch if ch.isalnum() or ch in {"-", "_", "."} else "_" for ch in cleaned).strip("._") or "unknown"
+
+
+def format_batch_timestamp(batch: dict) -> str:
+    created_at = batch.get("created_at")
+    if not created_at:
+        return datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
+
+    try:
+        parsed = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        return parsed.astimezone().strftime("%Y%m%d-%H%M%S")
+    except ValueError:
+        return datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
+
+
+def batch_result_dir_name(batch: dict) -> str:
+    timestamp = format_batch_timestamp(batch)
+    return f"{timestamp}__{batch['id']}"
+
+
+def job_result_dir_name(job: dict, upload_meta: dict | None = None) -> str:
+    upload_filename = job.get("upload_filename")
+    if not upload_filename and upload_meta:
+        upload_filename = upload_meta.get("upload", {}).get("filename")
+    if not upload_filename:
+        return job["id"]
+    return f"{job['id']}__{safe_label(Path(upload_filename).stem)}"
+
+
 def poll_batch(base_url: str, batch_id: str, results_dir: Path, poll_seconds: float) -> dict:
     last_snapshot = None
     while True:
@@ -145,19 +202,42 @@ def poll_batch(base_url: str, batch_id: str, results_dir: Path, poll_seconds: fl
         time.sleep(poll_seconds)
 
 
-def download_batch_artifacts(base_url: str, batch: dict, batch_dir: Path) -> None:
+def download_batch_artifacts(base_url: str, batch: dict, batch_dir: Path, uploads: list[dict]) -> None:
+    uploads_by_id = {item["upload"]["id"]: item for item in uploads}
+    job_index = []
     for job_id in batch["job_ids"]:
-        job_dir = batch_dir / job_id
         job = request_json("GET", f"{base_url.rstrip('/')}/jobs/{job_id}")
         artifacts = request_json("GET", f"{base_url.rstrip('/')}/jobs/{job_id}/artifacts")
+        upload_meta = uploads_by_id.get(job["upload_id"], {})
+        source_path = upload_meta.get("source_path")
+        upload_filename = job.get("upload_filename") or upload_meta.get("upload", {}).get("filename")
+        result_dir_name = job_result_dir_name(job, upload_meta)
+        job_dir = batch_dir / result_dir_name
 
         save_json(job_dir / "job.json", job)
         save_json(job_dir / "artifacts.json", artifacts)
+        job_index.append(
+            {
+                "job_id": job["id"],
+                "result_dir_name": result_dir_name,
+                "upload_id": job["upload_id"],
+                "upload_filename": upload_filename,
+                "source_path": source_path,
+                "status": job["status"],
+                "result_dir": str(job_dir),
+            }
+        )
 
         for artifact in artifacts:
-            artifact_path = job_dir / artifact["kind"] / artifact["filename"]
+            artifact_filename = artifact["filename"]
+            if artifact["kind"] == "input_video" and upload_filename:
+                artifact_filename = upload_filename
+            artifact_path = job_dir / artifact["kind"] / artifact_filename
             download_file(f"{base_url.rstrip('/')}/artifacts/{artifact['id']}/download", artifact_path)
             print(f"[artifact] job={job_id} saved={artifact_path}")
+
+    save_json(batch_dir / "job_index.json", job_index)
+    save_csv(batch_dir / "job_index.csv", job_index)
 
 
 def main() -> int:
@@ -182,6 +262,7 @@ def main() -> int:
             {
                 "upload_id": item["upload"]["id"],
                 "static_camera": args.static_camera,
+                "use_dpvo": args.use_dpvo,
                 "video_render": args.video_render,
                 "video_type": args.video_type,
                 "f_mm": args.f_mm,
@@ -192,7 +273,7 @@ def main() -> int:
     }
 
     batch = request_json("POST", f"{base_url}/batches", payload=batch_request)
-    batch_dir = results_root / batch["id"]
+    batch_dir = results_root / batch_result_dir_name(batch)
     batch_dir.mkdir(parents=True, exist_ok=True)
 
     save_json(batch_dir / "uploads.json", uploads)
@@ -205,7 +286,7 @@ def main() -> int:
 
     batch = poll_batch(base_url, batch["id"], batch_dir, args.poll_seconds)
     if args.download_artifacts:
-        download_batch_artifacts(base_url, batch, batch_dir)
+        download_batch_artifacts(base_url, batch, batch_dir, uploads)
 
     print(f"[done] batch={batch['id']} status={batch['status']} results_dir={batch_dir}")
     return 0

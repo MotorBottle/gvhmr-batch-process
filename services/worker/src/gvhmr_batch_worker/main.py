@@ -53,6 +53,7 @@ def execute_assigned_job(
         upload_id=upload.id,
         video_sha256=upload.sha256,
         static_camera=job.static_camera,
+        use_dpvo=job.use_dpvo,
         video_render=job.video_render,
         video_type=job.video_type,
         f_mm=job.f_mm,
@@ -84,6 +85,7 @@ def execute_assigned_job(
                 artifact_kind=ArtifactKind(artifact.kind),
                 subdir=artifact.subdir,
                 content_type=artifact.content_type,
+                filename_override=upload.filename if artifact.kind == ArtifactKind.INPUT_VIDEO.value else None,
             )
             for artifact in result.artifacts
         ]

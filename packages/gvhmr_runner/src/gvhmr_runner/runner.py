@@ -18,6 +18,7 @@ class RunnerJobSpec:
     upload_id: str
     video_sha256: str
     static_camera: bool = True
+    use_dpvo: bool = False
     video_render: bool = False
     video_type: str = "none"
     f_mm: int | None = None
@@ -68,6 +69,7 @@ class GVHMRRunner:
         core_key = build_core_cache_key(
             video_sha256=spec.video_sha256,
             static_camera=spec.static_camera,
+            use_dpvo=spec.use_dpvo,
             f_mm=spec.f_mm,
             upstream_version=spec.upstream_version or self.upstream_version,
         )
@@ -134,6 +136,8 @@ class GVHMRRunner:
         ]
         if spec.static_camera:
             command.append("-s")
+        elif spec.use_dpvo:
+            command.append("--use_dpvo")
         if spec.f_mm is not None:
             command.append(f"--f_mm={spec.f_mm}")
 

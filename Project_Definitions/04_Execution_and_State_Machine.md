@@ -80,7 +80,7 @@ stateDiagram-v2
 
 ### 核心推理缓存键
 
-`video_sha256 + static_camera + f_mm + upstream_version`
+`video_sha256 + static_camera + use_dpvo(仅动态相机时) + f_mm + upstream_version`
 
 ### 渲染缓存键
 
@@ -90,6 +90,7 @@ stateDiagram-v2
 
 - 相同视频、相同核心参数复用 preprocess 与主推理结果
 - 仅更改视频渲染参数时，不重复跑核心 GVHMR 推理
+- 动态相机下，`SimpleVO` 与 `DPVO` 使用不同核心缓存键，避免错误复用
 
 ## 8. 交付流程
 
@@ -102,4 +103,3 @@ stateDiagram-v2
 7. Worker 上传 artifact 到 MinIO
 8. Worker 更新 job 成功或失败状态
 9. API 暴露查询与下载接口
-

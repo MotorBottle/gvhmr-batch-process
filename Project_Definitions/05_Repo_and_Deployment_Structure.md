@@ -136,6 +136,7 @@ repo/
 - `NODE_NAME`
 - `GPU_SLOT`
 - `WORKER_VISIBLE_DEVICE`
+- `WORKER_TORCH_CUDA_ARCH_LIST`
 - `MODEL_ROOT`
 - `SCRATCH_ROOT`
 - `WORKER_SCRATCH_HOST_PATH`
@@ -187,6 +188,8 @@ repo/
 - worker 当前默认挂载仓库根目录 `models/` 到容器内 `inputs/checkpoints`
 - `models/` 不纳入 git，用户需按文档自行下载和放置模型资产
 - worker 当前直接从 CUDA 基础镜像和 `third_party/GVHMR` submodule 自行构建
+- `use_dpvo=true` 对应的 DPVO CUDA 扩展在 worker 镜像 build 阶段编译
+- 该编译当前通过 `WORKER_TORCH_CUDA_ARCH_LIST` 显式指定目标 GPU 架构，默认值为 `7.5;8.0;8.6;8.9`
 - worker 启动需等待 `migrate` 完成，避免在表尚未创建时抢跑
 - `deploy/env/*.env` 不纳入 git，需通过模板初始化
 

@@ -56,9 +56,11 @@
 - `id`
 - `batch_id`
 - `upload_id`
+- `upload_filename`
 - `status`
 - `priority`
 - `static_camera`
+- `use_dpvo`
 - `video_render`
 - `video_type`
 - `f_mm`
@@ -117,6 +119,7 @@
 {
   "upload_id": "upl_xxx",
   "static_camera": true,
+  "use_dpvo": false,
   "video_render": false,
   "video_type": "none",
   "f_mm": null,
@@ -133,6 +136,7 @@
     {
       "upload_id": "upl_a",
       "static_camera": true,
+      "use_dpvo": false,
       "video_render": false,
       "video_type": "none",
       "f_mm": null,
@@ -141,6 +145,7 @@
     {
       "upload_id": "upl_b",
       "static_camera": false,
+      "use_dpvo": true,
       "video_render": true,
       "video_type": "all",
       "f_mm": 24,
@@ -193,4 +198,4 @@
 - 所有时间字段使用 UTC ISO8601
 - 所有下载能力通过 artifact 层暴露
 - batch 只汇总 job，不直接持有大对象
-
+- `use_dpvo` 仅在 `static_camera=false` 时生效；静态相机场景下忽略该字段

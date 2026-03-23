@@ -142,6 +142,10 @@
                     <option value="true">static_camera = true</option>
                     <option value="false">static_camera = false</option>
                 </select>
+                <select id="jobUseDpvo">
+                    <option value="false">use_dpvo = false</option>
+                    <option value="true">use_dpvo = true</option>
+                </select>
                 <select id="jobVideoRender">
                     <option value="false">video_render = false</option>
                     <option value="true">video_render = true</option>
@@ -161,6 +165,25 @@
             <h2>创建 Batch</h2>
             <form id="batchForm">
                 <input type="text" id="batchName" placeholder="batch 名称" required>
+                <select id="batchStaticCamera">
+                    <option value="true">static_camera = true</option>
+                    <option value="false">static_camera = false</option>
+                </select>
+                <select id="batchUseDpvo">
+                    <option value="false">use_dpvo = false</option>
+                    <option value="true">use_dpvo = true</option>
+                </select>
+                <select id="batchVideoRender">
+                    <option value="false">video_render = false</option>
+                    <option value="true">video_render = true</option>
+                </select>
+                <input type="text" id="batchVideoType" placeholder="video_type，默认 none" value="none">
+                <input type="number" id="batchFmm" placeholder="f_mm，可留空">
+                <select id="batchPriority">
+                    <option value="normal">priority = normal</option>
+                    <option value="high">priority = high</option>
+                    <option value="low">priority = low</option>
+                </select>
                 <textarea id="batchUploadIds" rows="6" placeholder="每行一个 upload_id" required></textarea>
                 <button type="submit">POST /batches</button>
             </form>

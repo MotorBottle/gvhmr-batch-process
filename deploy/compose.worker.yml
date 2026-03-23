@@ -3,6 +3,8 @@ services:
     build:
       context: ..
       dockerfile: deploy/docker/worker.Dockerfile
+      args:
+        TORCH_CUDA_ARCH_LIST: "${WORKER_TORCH_CUDA_ARCH_LIST:-7.5;8.0;8.6;8.9}"
     env_file:
       - ./env/worker.env
     environment:

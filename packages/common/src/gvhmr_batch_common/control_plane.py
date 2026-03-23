@@ -71,13 +71,16 @@ def _to_upload_record(model: UploadORM) -> UploadRecord:
 
 
 def _to_job_record(model: JobORM) -> JobRecord:
+    upload = model.upload
     return JobRecord(
         id=model.id,
         batch_id=model.batch_id,
         upload_id=model.upload_id,
+        upload_filename=upload.filename if upload is not None else None,
         status=JobStatus(model.status),
         priority=JobPriority(model.priority),
         static_camera=model.static_camera,
+        use_dpvo=model.use_dpvo,
         video_render=model.video_render,
         video_type=model.video_type,
         f_mm=model.f_mm,
@@ -232,6 +235,7 @@ class ControlPlaneStore:
                 status=JobStatus.QUEUED.value,
                 priority=request.priority.value,
                 static_camera=request.static_camera,
+                use_dpvo=request.use_dpvo,
                 video_render=request.video_render,
                 video_type=request.video_type,
                 f_mm=request.f_mm,
@@ -334,6 +338,7 @@ class ControlPlaneStore:
                         status=JobStatus.QUEUED.value,
                         priority=item.priority.value,
                         static_camera=item.static_camera,
+                        use_dpvo=item.use_dpvo,
                         video_render=item.video_render,
                         video_type=item.video_type,
                         f_mm=item.f_mm,
@@ -780,14 +785,16 @@ class ControlPlaneStore:
         artifact_kind: ArtifactKind,
         subdir: str,
         content_type: str = "application/octet-stream",
+        filename_override: str | None = None,
     ) -> UploadedArtifact:
         if self._storage is None:
             raise RuntimeError("Storage backend is not configured.")
-        storage_key = f"jobs/{job_id}/{subdir}/{file_path.name}"
+        filename = safe_filename(filename_override or file_path.name)
+        storage_key = f"jobs/{job_id}/{subdir}/{filename}"
         self._storage.fput_file(storage_key, file_path, content_type=content_type)
         return UploadedArtifact(
             kind=artifact_kind,
-            filename=file_path.name,
+            filename=filename,
             storage_key=storage_key,
         )
 

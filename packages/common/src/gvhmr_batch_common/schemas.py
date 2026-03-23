@@ -20,6 +20,7 @@ class UploadRecord(BaseModel):
 class JobCreateRequest(BaseModel):
     upload_id: str
     static_camera: bool = True
+    use_dpvo: bool = False
     video_render: bool = False
     video_type: str = "none"
     f_mm: int | None = None
@@ -29,6 +30,7 @@ class JobCreateRequest(BaseModel):
 class BatchItemCreateRequest(BaseModel):
     upload_id: str
     static_camera: bool = True
+    use_dpvo: bool = False
     video_render: bool = False
     video_type: str = "none"
     f_mm: int | None = None
@@ -47,6 +49,7 @@ class ArtifactRecord(BaseModel):
 class JobRecord(JobCreateRequest):
     id: str
     batch_id: str | None = None
+    upload_filename: str | None = None
     status: JobStatus = JobStatus.QUEUED
     assigned_worker_id: str | None = None
     assigned_gpu_slot: int | None = None
