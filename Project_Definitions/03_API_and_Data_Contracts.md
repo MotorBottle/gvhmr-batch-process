@@ -67,6 +67,10 @@
 - `assigned_worker_id`
 - `assigned_gpu_slot`
 - `artifact_count`
+- `retry_count`
+- `max_retries`
+- `failure_category`
+- `next_retry_at`
 - `error_message`
 - `created_at`
 - `updated_at`
@@ -181,6 +185,15 @@
 - `idle`
 - `busy`
 - `offline`
+
+### FailureCategory
+
+- `infra_transient`
+- `infra_permanent`
+- `algorithm_failure`
+- `input_invalid`
+- `timeout`
+- `canceled`
 
 ## 6. ArtifactKind
 

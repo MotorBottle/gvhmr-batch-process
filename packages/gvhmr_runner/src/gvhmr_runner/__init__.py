@@ -4,6 +4,7 @@ from gvhmr_runner.runner import (
     RunnerArtifact,
     RunnerCancelled,
     RunnerExecutionResult,
+    RunnerInfrastructureError,
     RunnerJobSpec,
     RunnerPlan,
 )
@@ -13,6 +14,7 @@ __all__ = [
     "RunnerArtifact",
     "RunnerCancelled",
     "RunnerExecutionResult",
+    "RunnerInfrastructureError",
     "RunnerJobSpec",
     "RunnerPlan",
     "build_core_cache_key",

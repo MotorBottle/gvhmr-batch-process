@@ -1,4 +1,4 @@
-from gvhmr_batch_common.enums import ArtifactKind, BatchStatus, JobPriority, JobStatus, WorkerStatus
+from gvhmr_batch_common.enums import ArtifactKind, BatchStatus, FailureCategory, JobPriority, JobStatus, WorkerStatus
 from gvhmr_batch_common.control_plane import ControlPlaneStore, DispatchDecision, JobExecutionPayload
 from gvhmr_batch_common.database import create_engine_from_dsn, create_session_factory, normalize_postgres_dsn
 from gvhmr_batch_common.queue import DEFAULT_REDIS_NAMESPACE, RedisDispatchQueue
@@ -30,6 +30,7 @@ __all__ = [
     "create_session_factory",
     "DEFAULT_REDIS_NAMESPACE",
     "DispatchDecision",
+    "FailureCategory",
     "HealthResponse",
     "JobAssignment",
     "JobCreateRequest",

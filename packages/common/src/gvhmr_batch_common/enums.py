@@ -40,3 +40,12 @@ class JobPriority(str, Enum):
     LOW = "low"
     NORMAL = "normal"
     HIGH = "high"
+
+
+class FailureCategory(str, Enum):
+    INFRA_TRANSIENT = "infra_transient"
+    INFRA_PERMANENT = "infra_permanent"
+    ALGORITHM_FAILURE = "algorithm_failure"
+    INPUT_INVALID = "input_invalid"
+    TIMEOUT = "timeout"
+    CANCELED = "canceled"

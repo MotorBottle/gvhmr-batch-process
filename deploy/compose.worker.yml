@@ -1,5 +1,6 @@
 services:
   worker:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: deploy/docker/worker.Dockerfile
@@ -19,6 +20,12 @@ services:
         target: /app/gvhmr/inputs/checkpoints
         read_only: true
     gpus: all
+    healthcheck:
+      test: ["CMD", "python", "-m", "gvhmr_batch_worker.healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     depends_on:
       postgres:
         condition: service_healthy

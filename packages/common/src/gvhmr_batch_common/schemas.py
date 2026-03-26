@@ -4,7 +4,14 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from gvhmr_batch_common.enums import ArtifactKind, BatchStatus, JobPriority, JobStatus, WorkerStatus
+from gvhmr_batch_common.enums import (
+    ArtifactKind,
+    BatchStatus,
+    FailureCategory,
+    JobPriority,
+    JobStatus,
+    WorkerStatus,
+)
 
 
 class UploadRecord(BaseModel):
@@ -54,6 +61,10 @@ class JobRecord(JobCreateRequest):
     assigned_worker_id: str | None = None
     assigned_gpu_slot: int | None = None
     artifact_count: int = 0
+    retry_count: int = 0
+    max_retries: int = 1
+    failure_category: FailureCategory | None = None
+    next_retry_at: datetime | None = None
     error_message: str | None = None
     cancel_requested_at: datetime | None = None
     started_at: datetime | None = None

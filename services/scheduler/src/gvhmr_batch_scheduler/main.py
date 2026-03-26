@@ -14,11 +14,27 @@ logger = logging.getLogger("gvhmr_batch_scheduler")
 
 
 def reconcile_dispatch_state(*, settings: SchedulerSettings, store: ControlPlaneStore, queue: RedisDispatchQueue) -> None:
-    failed_job_ids = store.mark_stale_workers_offline(
-        offline_after_seconds=settings.worker_offline_after_seconds
+    recovery = store.mark_stale_workers_offline(
+        offline_after_seconds=settings.worker_offline_after_seconds,
+        retry_delay_seconds=settings.infra_retry_delay_seconds,
     )
-    if failed_job_ids:
-        logger.warning("Marked jobs failed due to stale workers: %s", ", ".join(failed_job_ids))
+    if recovery.failed_job_ids:
+        logger.warning("Marked jobs failed due to stale workers: %s", ", ".join(recovery.failed_job_ids))
+    if recovery.retried_jobs:
+        logger.warning(
+            "Queued automatic retry after stale workers: %s",
+            ", ".join(job_id for job_id, _ in recovery.retried_jobs),
+        )
+
+    requeued_jobs, reusable_workers = store.requeue_stale_scheduled_jobs(
+        claim_timeout_seconds=settings.assignment_claim_timeout_seconds,
+        offline_after_seconds=settings.worker_offline_after_seconds,
+    )
+    if requeued_jobs:
+        logger.warning(
+            "Requeued stale scheduled jobs whose workers never claimed them: %s",
+            ", ".join(job_id for job_id, _ in requeued_jobs),
+        )
 
     queue.clear_dispatch_state()
 
@@ -35,6 +51,8 @@ def reconcile_dispatch_state(*, settings: SchedulerSettings, store: ControlPlane
     for worker in workers:
         if worker.status is WorkerStatus.IDLE and worker.running_job_id is None:
             queue.requeue_idle_worker(worker.id)
+    for worker_id in reusable_workers:
+        queue.requeue_idle_worker(worker_id)
 
     if queued_jobs or scheduled_jobs:
         queue.signal_scheduler("reconciled")
@@ -104,11 +122,33 @@ async def run_scheduler(settings: SchedulerSettings) -> None:
                 queue.wait_for_scheduler_signal,
                 settings.poll_interval_seconds,
             )
-            failed_job_ids = store.mark_stale_workers_offline(
-                offline_after_seconds=settings.worker_offline_after_seconds
+            recovery = store.mark_stale_workers_offline(
+                offline_after_seconds=settings.worker_offline_after_seconds,
+                retry_delay_seconds=settings.infra_retry_delay_seconds,
             )
-            if failed_job_ids:
-                logger.warning("Marked jobs failed due to stale workers: %s", ", ".join(failed_job_ids))
+            if recovery.failed_job_ids:
+                logger.warning("Marked jobs failed due to stale workers: %s", ", ".join(recovery.failed_job_ids))
+            if recovery.retried_jobs:
+                logger.warning(
+                    "Queued automatic retry after stale workers: %s",
+                    ", ".join(job_id for job_id, _ in recovery.retried_jobs),
+                )
+
+            requeued_jobs, reusable_workers = store.requeue_stale_scheduled_jobs(
+                claim_timeout_seconds=settings.assignment_claim_timeout_seconds,
+                offline_after_seconds=settings.worker_offline_after_seconds,
+            )
+            if requeued_jobs:
+                queue.enqueue_jobs(requeued_jobs)
+                logger.warning(
+                    "Requeued stale scheduled jobs whose workers never claimed them: %s",
+                    ", ".join(job_id for job_id, _ in requeued_jobs),
+                )
+            queued_jobs = store.list_queued_jobs()
+            if queued_jobs:
+                queue.enqueue_jobs([(job.id, job.priority) for job in queued_jobs])
+            for worker_id in reusable_workers:
+                queue.requeue_idle_worker(worker_id)
 
             dispatched = await asyncio.to_thread(
                 dispatch_available_work,

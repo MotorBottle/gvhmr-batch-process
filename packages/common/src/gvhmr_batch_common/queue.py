@@ -27,10 +27,14 @@ class RedisDispatchQueue:
             return
 
         pipe = self._client.pipeline()
+        enqueued_any = False
         for job_id, priority in items:
-            pipe.rpush(self._priority_queue_key(priority), job_id)
-        pipe.rpush(self._scheduler_signal_key(), "jobs_ready")
-        pipe.execute()
+            if self._client.sadd(self._enqueued_jobs_key(), job_id):
+                pipe.rpush(self._priority_queue_key(priority), job_id)
+                enqueued_any = True
+        if enqueued_any:
+            pipe.rpush(self._scheduler_signal_key(), "jobs_ready")
+            pipe.execute()
 
     def announce_worker_idle(self, worker_id: str) -> None:
         pipe = self._client.pipeline()
@@ -59,10 +63,12 @@ class RedisDispatchQueue:
         for priority in (JobPriority.HIGH, JobPriority.NORMAL, JobPriority.LOW):
             job_id = self._client.lpop(self._priority_queue_key(priority))
             if job_id is not None:
+                self._client.srem(self._enqueued_jobs_key(), job_id)
                 return str(job_id), priority
         return None
 
     def requeue_job_front(self, *, job_id: str, priority: JobPriority) -> None:
+        self._client.sadd(self._enqueued_jobs_key(), job_id)
         self._client.lpush(self._priority_queue_key(priority), job_id)
 
     def push_worker_job(self, *, worker_id: str, job_id: str) -> None:
@@ -79,6 +85,7 @@ class RedisDispatchQueue:
         keys = [
             self._scheduler_signal_key(),
             self._idle_workers_key(),
+            self._enqueued_jobs_key(),
             self._priority_queue_key(JobPriority.HIGH),
             self._priority_queue_key(JobPriority.NORMAL),
             self._priority_queue_key(JobPriority.LOW),
@@ -98,6 +105,9 @@ class RedisDispatchQueue:
 
     def _idle_workers_key(self) -> str:
         return f"{self._namespace}:workers:idle"
+
+    def _enqueued_jobs_key(self) -> str:
+        return f"{self._namespace}:jobs:enqueued"
 
     def _scheduler_signal_key(self) -> str:
         return f"{self._namespace}:scheduler:signals"

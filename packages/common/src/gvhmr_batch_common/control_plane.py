@@ -6,10 +6,10 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Iterable
 
-from sqlalchemy import case, select, text
+from sqlalchemy import case, or_, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
-from gvhmr_batch_common.enums import ArtifactKind, BatchStatus, JobPriority, JobStatus, WorkerStatus
+from gvhmr_batch_common.enums import ArtifactKind, BatchStatus, FailureCategory, JobPriority, JobStatus, WorkerStatus
 from gvhmr_batch_common.models import ArtifactORM, BatchORM, JobAssignmentORM, JobORM, UploadORM, WorkerHeartbeatORM
 from gvhmr_batch_common.schemas import (
     ArtifactRecord,
@@ -47,6 +47,12 @@ class DispatchDecision:
     reason: str
     job: JobRecord | None = None
     worker: WorkerHeartbeatRecord | None = None
+
+
+@dataclass(slots=True)
+class StaleWorkerRecoveryResult:
+    failed_job_ids: list[str]
+    retried_jobs: list[tuple[str, JobPriority]]
 
 
 def _priority_order() -> case:
@@ -87,6 +93,10 @@ def _to_job_record(model: JobORM) -> JobRecord:
         assigned_worker_id=model.assigned_worker_id,
         assigned_gpu_slot=model.assigned_gpu_slot,
         artifact_count=model.artifact_count,
+        retry_count=model.retry_count,
+        max_retries=model.max_retries,
+        failure_category=FailureCategory(model.failure_category) if model.failure_category else None,
+        next_retry_at=model.next_retry_at,
         error_message=model.error_message,
         cancel_requested_at=model.cancel_requested_at,
         started_at=model.started_at,
@@ -240,6 +250,10 @@ class ControlPlaneStore:
                 video_type=request.video_type,
                 f_mm=request.f_mm,
                 artifact_count=0,
+                retry_count=0,
+                max_retries=1,
+                failure_category=None,
+                next_retry_at=None,
                 created_at=now,
                 updated_at=now,
             )
@@ -343,6 +357,10 @@ class ControlPlaneStore:
                         video_type=item.video_type,
                         f_mm=item.f_mm,
                         artifact_count=0,
+                        retry_count=0,
+                        max_retries=1,
+                        failure_category=None,
+                        next_retry_at=None,
                         created_at=now,
                         updated_at=now,
                     )
@@ -370,10 +388,14 @@ class ControlPlaneStore:
             ]
 
     def list_queued_jobs(self) -> list[JobRecord]:
+        now = utcnow()
         with self._session_factory() as session:
             query = (
                 select(JobORM)
-                .where(JobORM.status == JobStatus.QUEUED.value)
+                .where(
+                    JobORM.status == JobStatus.QUEUED.value,
+                    or_(JobORM.next_retry_at.is_(None), JobORM.next_retry_at <= now),
+                )
                 .order_by(_priority_order().desc(), JobORM.created_at.asc())
             )
             return [_to_job_record(item) for item in session.scalars(query).all()]
@@ -436,9 +458,15 @@ class ControlPlaneStore:
             session.refresh(record)
             return _to_worker_record(record)
 
-    def mark_stale_workers_offline(self, *, offline_after_seconds: int) -> list[str]:
+    def mark_stale_workers_offline(
+        self,
+        *,
+        offline_after_seconds: int,
+        retry_delay_seconds: int | None = None,
+    ) -> StaleWorkerRecoveryResult:
         cutoff = utcnow() - timedelta(seconds=offline_after_seconds)
         failed_job_ids: list[str] = []
+        retried_jobs: list[tuple[str, JobPriority]] = []
 
         with self._session_factory() as session:
             stale_workers = session.scalars(
@@ -452,17 +480,20 @@ class ControlPlaneStore:
                 if worker.running_job_id:
                     job = session.get(JobORM, worker.running_job_id)
                     if job and job.status in {JobStatus.SCHEDULED.value, JobStatus.RUNNING.value}:
-                        now = utcnow()
-                        job.status = JobStatus.FAILED.value
-                        job.error_message = f"Worker {worker.id} heartbeat timed out."
-                        job.finished_at = now
-                        job.updated_at = now
-                        failed_job_ids.append(job.id)
-                        assignment = session.scalars(
-                            select(JobAssignmentORM).where(JobAssignmentORM.job_id == job.id)
-                        ).first()
-                        if assignment:
-                            assignment.completed_at = now
+                        error_message = f"Worker {worker.id} heartbeat timed out."
+                        retried = self._transition_job_after_failure(
+                            session,
+                            job=job,
+                            worker_id=worker.id,
+                            error_message=error_message,
+                            failure_category=FailureCategory.INFRA_TRANSIENT,
+                            retry_delay_seconds=retry_delay_seconds,
+                            canceled=False,
+                        )
+                        if retried:
+                            retried_jobs.append((job.id, JobPriority(job.priority)))
+                        else:
+                            failed_job_ids.append(job.id)
                         if job.batch_id:
                             self._refresh_batch_state(session, job.batch_id)
 
@@ -470,7 +501,10 @@ class ControlPlaneStore:
                 worker.running_job_id = None
 
             session.commit()
-        return failed_job_ids
+        return StaleWorkerRecoveryResult(
+            failed_job_ids=failed_job_ids,
+            retried_jobs=retried_jobs,
+        )
 
     def assign_job_to_worker(
         self,
@@ -528,11 +562,23 @@ class ControlPlaneStore:
                     job=_to_job_record(job),
                     worker=_to_worker_record(worker),
                 )
+            if job.next_retry_at is not None and job.next_retry_at > utcnow():
+                return DispatchDecision(
+                    scheduled=False,
+                    requeue_job=False,
+                    requeue_worker=True,
+                    reason=f"Job {job_id} is not ready for retry yet.",
+                    job=_to_job_record(job),
+                    worker=_to_worker_record(worker),
+                )
 
             now = utcnow()
             job.status = JobStatus.SCHEDULED.value
             job.assigned_worker_id = worker.id
             job.assigned_gpu_slot = worker.gpu_slot
+            job.error_message = None
+            job.failure_category = None
+            job.next_retry_at = None
             job.updated_at = now
 
             worker.status = WorkerStatus.BUSY.value
@@ -560,8 +606,64 @@ class ControlPlaneStore:
                 worker=_to_worker_record(worker),
             )
 
+    def requeue_stale_scheduled_jobs(
+        self,
+        *,
+        claim_timeout_seconds: int,
+        offline_after_seconds: int,
+    ) -> tuple[list[tuple[str, JobPriority]], list[str]]:
+        now = utcnow()
+        claim_cutoff = now - timedelta(seconds=claim_timeout_seconds)
+        offline_cutoff = now - timedelta(seconds=offline_after_seconds)
+        requeued_jobs: list[tuple[str, JobPriority]] = []
+        reusable_workers: list[str] = []
+
+        with self._session_factory() as session:
+            assignments = session.scalars(
+                select(JobAssignmentORM)
+                .join(JobORM, JobORM.id == JobAssignmentORM.job_id)
+                .where(
+                    JobORM.status == JobStatus.SCHEDULED.value,
+                    JobAssignmentORM.claimed_at.is_(None),
+                    JobAssignmentORM.assigned_at < claim_cutoff,
+                )
+                .order_by(JobAssignmentORM.assigned_at.asc())
+            ).all()
+
+            for assignment in assignments:
+                job = session.get(JobORM, assignment.job_id)
+                if job is None or job.status != JobStatus.SCHEDULED.value:
+                    continue
+
+                worker = session.get(WorkerHeartbeatORM, assignment.worker_id)
+                worker_is_stale = worker is None or worker.last_heartbeat_at < offline_cutoff
+
+                job.status = JobStatus.QUEUED.value
+                job.assigned_worker_id = None
+                job.assigned_gpu_slot = None
+                job.next_retry_at = None
+                job.updated_at = now
+
+                if worker is not None:
+                    if worker_is_stale:
+                        worker.status = WorkerStatus.OFFLINE.value
+                    else:
+                        worker.status = WorkerStatus.IDLE.value
+                        reusable_workers.append(worker.id)
+                    if worker.running_job_id == job.id:
+                        worker.running_job_id = None
+
+                session.delete(assignment)
+                requeued_jobs.append((job.id, JobPriority(job.priority)))
+                if job.batch_id:
+                    self._refresh_batch_state(session, job.batch_id)
+
+            session.commit()
+        return requeued_jobs, reusable_workers
+
     def schedule_next_job(self, *, offline_after_seconds: int) -> tuple[JobRecord, WorkerHeartbeatRecord] | None:
-        cutoff = utcnow() - timedelta(seconds=offline_after_seconds)
+        now = utcnow()
+        cutoff = now - timedelta(seconds=offline_after_seconds)
 
         with self._session_factory() as session:
             worker = session.scalars(
@@ -577,16 +679,21 @@ class ControlPlaneStore:
 
             job = session.scalars(
                 select(JobORM)
-                .where(JobORM.status == JobStatus.QUEUED.value)
+                .where(
+                    JobORM.status == JobStatus.QUEUED.value,
+                    or_(JobORM.next_retry_at.is_(None), JobORM.next_retry_at <= now),
+                )
                 .order_by(_priority_order().desc(), JobORM.created_at.asc())
             ).first()
             if job is None:
                 return None
 
-            now = utcnow()
             job.status = JobStatus.SCHEDULED.value
             job.assigned_worker_id = worker.id
             job.assigned_gpu_slot = worker.gpu_slot
+            job.error_message = None
+            job.failure_category = None
+            job.next_retry_at = None
             job.updated_at = now
 
             worker.status = WorkerStatus.BUSY.value
@@ -687,6 +794,9 @@ class ControlPlaneStore:
             now = utcnow()
             job.status = JobStatus.RUNNING.value
             job.started_at = job.started_at or now
+            job.error_message = None
+            job.failure_category = None
+            job.next_retry_at = None
             job.updated_at = now
 
             assignment = session.scalars(
@@ -721,23 +831,11 @@ class ControlPlaneStore:
                 raise KeyError(f"Unknown job_id: {job_id}")
 
             now = utcnow()
-            artifact_count = job.artifact_count
-            for item in artifacts:
-                session.add(
-                    ArtifactORM(
-                        id=new_id("art"),
-                        job_id=job_id,
-                        kind=item.kind.value,
-                        filename=item.filename,
-                        storage_key=item.storage_key,
-                        created_at=now,
-                    )
-                )
-                artifact_count += 1
-
-            job.artifact_count = artifact_count
+            self._persist_artifacts(session, job=job, artifacts=artifacts, created_at=now)
             job.status = JobStatus.SUCCEEDED.value
             job.error_message = None
+            job.failure_category = None
+            job.next_retry_at = None
             job.finished_at = now
             job.updated_at = now
             self._release_worker_for_job(session, job_id, worker_id)
@@ -753,7 +851,10 @@ class ControlPlaneStore:
         job_id: str,
         worker_id: str,
         error_message: str,
+        failure_category: FailureCategory | None = None,
+        retry_delay_seconds: int | None = None,
         canceled: bool = False,
+        artifacts: Iterable[UploadedArtifact] = (),
     ) -> JobRecord:
         with self._session_factory() as session:
             job = session.get(JobORM, job_id)
@@ -761,11 +862,16 @@ class ControlPlaneStore:
                 raise KeyError(f"Unknown job_id: {job_id}")
 
             now = utcnow()
-            job.status = JobStatus.CANCELED.value if canceled else JobStatus.FAILED.value
-            job.error_message = error_message
-            job.finished_at = now
-            job.updated_at = now
-            self._release_worker_for_job(session, job_id, worker_id)
+            self._persist_artifacts(session, job=job, artifacts=artifacts, created_at=now)
+            self._transition_job_after_failure(
+                session,
+                job=job,
+                worker_id=worker_id,
+                error_message=error_message,
+                failure_category=failure_category,
+                retry_delay_seconds=retry_delay_seconds,
+                canceled=canceled,
+            )
             if job.batch_id:
                 self._refresh_batch_state(session, job.batch_id)
             session.commit()
@@ -797,6 +903,67 @@ class ControlPlaneStore:
             filename=filename,
             storage_key=storage_key,
         )
+
+    def _persist_artifacts(
+        self,
+        session: Session,
+        *,
+        job: JobORM,
+        artifacts: Iterable[UploadedArtifact],
+        created_at: datetime,
+    ) -> None:
+        artifact_count = job.artifact_count
+        for item in artifacts:
+            session.add(
+                ArtifactORM(
+                    id=new_id("art"),
+                    job_id=job.id,
+                    kind=item.kind.value,
+                    filename=item.filename,
+                    storage_key=item.storage_key,
+                    created_at=created_at,
+                )
+            )
+            artifact_count += 1
+        job.artifact_count = artifact_count
+
+    def _transition_job_after_failure(
+        self,
+        session: Session,
+        *,
+        job: JobORM,
+        worker_id: str | None,
+        error_message: str,
+        failure_category: FailureCategory | None,
+        retry_delay_seconds: int | None,
+        canceled: bool,
+    ) -> bool:
+        now = utcnow()
+        should_retry = (
+            not canceled
+            and retry_delay_seconds is not None
+            and job.retry_count < job.max_retries
+        )
+
+        if should_retry:
+            job.status = JobStatus.QUEUED.value
+            job.retry_count += 1
+            job.error_message = error_message
+            job.failure_category = failure_category.value if failure_category else None
+            job.next_retry_at = now + timedelta(seconds=max(retry_delay_seconds, 0))
+            job.finished_at = None
+            job.updated_at = now
+            job.cancel_requested_at = None
+        else:
+            job.status = JobStatus.CANCELED.value if canceled else JobStatus.FAILED.value
+            job.error_message = error_message
+            job.failure_category = failure_category.value if failure_category else None
+            job.next_retry_at = None
+            job.finished_at = now
+            job.updated_at = now
+
+        self._release_worker_for_job(session, job.id, worker_id)
+        return should_retry
 
     def _release_worker_for_job(self, session: Session, job_id: str, worker_id: str | None) -> None:
         now = utcnow()

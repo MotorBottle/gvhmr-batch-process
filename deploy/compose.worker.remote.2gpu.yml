@@ -26,6 +26,12 @@ services:
         target: /app/gvhmr/inputs/checkpoints
         read_only: true
     gpus: all
+    healthcheck:
+      test: ["CMD", "python", "-m", "gvhmr_batch_worker.healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   worker-gpu1:
     image: ${WORKER_IMAGE:-gvhmr-batch-process-worker:latest}
@@ -52,3 +58,9 @@ services:
         target: /app/gvhmr/inputs/checkpoints
         read_only: true
     gpus: all
+    healthcheck:
+      test: ["CMD", "python", "-m", "gvhmr_batch_worker.healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

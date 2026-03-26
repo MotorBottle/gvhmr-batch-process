@@ -51,6 +51,10 @@ class RunnerCancelled(RuntimeError):
     pass
 
 
+class RunnerInfrastructureError(RuntimeError):
+    pass
+
+
 class GVHMRRunner:
     def __init__(
         self,
@@ -194,6 +198,11 @@ class GVHMRRunner:
                 time.sleep(1)
 
         if return_code != 0:
+            fatal_message = self._detect_fatal_runtime_error(log_path)
+            if fatal_message is not None:
+                raise RunnerInfrastructureError(
+                    f"{fatal_message} GVHMR runner exited with code {return_code}. See runner.log for details."
+                )
             raise RuntimeError(f"GVHMR runner exited with code {return_code}. See runner.log for details.")
 
         artifacts = self._discover_real_artifacts(output_root)
@@ -309,4 +318,24 @@ class GVHMRRunner:
             return RunnerArtifact("archive", file_path, "archives", "application/zip")
         if suffix in {".json", ".txt", ".log"}:
             return RunnerArtifact("log", file_path, "logs", content_type)
+        return None
+
+    def _detect_fatal_runtime_error(self, log_path: Path) -> str | None:
+        if not log_path.exists():
+            return None
+
+        try:
+            log_text = log_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return None
+
+        patterns = (
+            ("No CUDA GPUs are available", "CUDA runtime is unavailable."),
+            ("torch._C._cuda_init()", "CUDA initialization failed."),
+            ("No such file or directory", "Required runtime asset is missing."),
+            ("No space left on device", "Scratch disk is full."),
+        )
+        for pattern, message in patterns:
+            if pattern in log_text:
+                return message
         return None

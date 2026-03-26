@@ -7,13 +7,15 @@ stateDiagram-v2
     [*] --> queued
     queued --> scheduled
     queued --> canceled
+    scheduled --> queued: claim timeout / auto retry
     scheduled --> running
     scheduled --> failed
     scheduled --> canceled
+    running --> queued: auto retry
     running --> succeeded
     running --> failed
     running --> canceled
-    failed --> queued: retry
+    failed --> queued: manual retry
 ```
 
 ### 状态含义
@@ -66,9 +68,15 @@ stateDiagram-v2
 
 ## 5. 重试规则
 
-- worker 在 `scheduled` 或 `running` 阶段失联时，job 标记为 `failed`
-- 后续可加显式重试计数
-- 第一阶段不做无限重试
+- `scheduled` job 如果在 claim timeout 内未被真正 `running`，会回收到 `queued`
+- 当前自动 retry 只针对 `infra_transient`：
+  - `CUDA runtime is unavailable`
+  - `CUDA initialization failed`
+  - `worker heartbeat timed out`
+- 自动 retry 默认最多 `1` 次，默认回退延迟 `30s`
+- `claim timeout` 回收不计入 `retry_count`
+- `input invalid / algorithm failure / infra permanent / canceled` 不自动 retry
+- 终态 `failed` 后仍可由后续显式接口或脚本做手动 retry
 
 ## 6. 取消规则
 
@@ -103,3 +111,15 @@ stateDiagram-v2
 7. Worker 上传 artifact 到 MinIO
 8. Worker 更新 job 成功或失败状态
 9. API 暴露查询与下载接口
+
+## 9. Worker 可靠性约束
+
+- worker 启动前必须完成 preflight：
+  - CUDA 可用
+  - 模型目录完整
+  - scratch 可写且剩余空间高于阈值
+  - Postgres / Redis / MinIO 可连通
+- worker 运行时通过容器 healthcheck 保活；healthcheck 失败时由容器编排层重启
+- 基础设施级错误不允许 worker 静默留在集群中继续接单
+- 失败 job 应尽量保留 `runner.log` 作为 artifact
+- scratch 目录由 worker 周期性清理，不保留无限增长的历史临时文件

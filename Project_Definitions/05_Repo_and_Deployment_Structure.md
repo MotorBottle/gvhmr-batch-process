@@ -92,6 +92,8 @@ repo/
 - GPU 绑定
 - 模型卷
 - scratch 卷
+- healthcheck
+- restart policy
 
 ### compose.worker.remote.yml
 
@@ -140,6 +142,14 @@ repo/
 - `MODEL_ROOT`
 - `SCRATCH_ROOT`
 - `WORKER_SCRATCH_HOST_PATH`
+- `HEALTHCHECK_FILE`
+- `HEALTHCHECK_MAX_AGE_SECONDS`
+- `SCRATCH_MIN_FREE_BYTES`
+- `SCRATCH_CLEANUP_INTERVAL_SECONDS`
+- `SCRATCH_SUCCESS_TTL_SECONDS`
+- `SCRATCH_FAILED_TTL_SECONDS`
+- `SCRATCH_ORPHAN_TTL_SECONDS`
+- `INFRA_RETRY_DELAY_SECONDS`
 - `UPSTREAM_GVHMR_REF`
 - `RUNNER_ENTRY_MODULE`
 - `CLOCK_SKEW_WARN_SECONDS`
@@ -175,6 +185,7 @@ repo/
 - 局部 cache
 - 远端多 worker 节点默认每个 worker 使用独立 host scratch 目录
 - 如果 Docker data root 已经在本地 SSD，上单 worker 时不强制再单独准备一块盘
+- worker 周期性清理陈旧 job scratch 目录，避免磁盘无限增长
 
 ## 6. 迁移原则
 
@@ -191,6 +202,9 @@ repo/
 - `use_dpvo=true` 对应的 DPVO CUDA 扩展在 worker 镜像 build 阶段编译
 - 该编译当前通过 `WORKER_TORCH_CUDA_ARCH_LIST` 显式指定目标 GPU 架构，默认值为 `7.5;8.0;8.6;8.9`
 - worker 启动需等待 `migrate` 完成，避免在表尚未创建时抢跑
+- worker 启动前必须通过 `CUDA / models / scratch / Postgres / Redis / MinIO` preflight
+- worker 失败时会尽量回传 `runner.log`，便于定位上游或运行时错误
+- 当前自动 retry 只对 `infra_transient` 生效，默认回退 `30s`、最大 `1` 次
 - `deploy/env/*.env` 不纳入 git，需通过模板初始化
 
 ## 8. 多机 Worker 约定
@@ -204,6 +218,8 @@ repo/
   - `worker_id` 未被其他在线 worker 占用
   - `node_name + gpu_slot` 未被其他在线 worker 占用
 - 远端 worker 依赖宿主机时间同步；worker 启动时会检测与 Postgres 的时钟漂移
+- `scheduled` 未被 claim 的 job 会在超时后回收到 `queued`
+- `worker heartbeat timeout` 会把当前 job 归类为 `infra_transient`，在未超过重试次数时自动转回 `queued`
 - 远端 worker 机器需要放通到控制平面机器的：
   - Postgres
   - Redis

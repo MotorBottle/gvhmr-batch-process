@@ -10,5 +10,7 @@ class SchedulerSettings(BaseSettings):
     redis_url: str = "redis://redis:6379/0"
     redis_namespace: str = DEFAULT_REDIS_NAMESPACE
     worker_offline_after_seconds: int = 15
+    assignment_claim_timeout_seconds: int = 30
+    infra_retry_delay_seconds: int = 30
 
     model_config = SettingsConfigDict(env_prefix="GVHMR_BATCH_SCHEDULER_", case_sensitive=False)
