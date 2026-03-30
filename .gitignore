@@ -19,6 +19,7 @@ tmp/
 .tmp/
 .idea/
 .vscode/
+.code-workspace.code-workspace
 deploy/env/*.env
 !deploy/env/*.example.env
 models/**

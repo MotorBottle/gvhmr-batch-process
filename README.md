@@ -288,6 +288,7 @@ make test-batch
 - `test/uploads/`：放待测视频，已加入 git ignore
 - `test/results/`：保存 batch 状态和下载回来的产物，已加入 git ignore
 - `test/run_batch_test.py`：批量上传 `test/uploads/` 下的视频，创建 batch，轮询完成，并把产物写入 `test/results/<timestamp>__<batch_id>/`
+- `test/export_batch_npz.py`：把一个已下载 batch 中所有成功 job 的 `hmr4d_results.pt` 导出成 `SMPL-X body-only` 的 `.npz`
 - 下载后的 job 目录会按 `job_id__原始文件名` 命名，并额外生成：
   - `job_index.json`
   - `job_index.csv`
@@ -298,6 +299,30 @@ make test-batch
 ```bash
 python3 test/run_batch_test.py --video-render --video-type skeleton_only
 ```
+
+将一个 batch 中所有成功输出的 `pt` 离线转换成 `.npz`：
+
+```bash
+python3 test/export_batch_npz.py test/results/<timestamp>__<batch_id>
+```
+
+该命令会在 batch 根目录下生成 `ouput/`，其中包含：
+
+- `README.md`
+- `index.json`
+- `index.csv`
+- `<job_id>__<video_stem>.npz`
+
+这批 `.npz` 的约定是：
+
+- `model_type = "smplx"`
+- `pose_rep = "body_only"`
+- `coordinate_system = "world_y_up"`
+- `betas` 为序列级 `10D`
+- `root_orient` 为 `(F, 3)`
+- `pose_body` 为 `(F, 63)`
+- `poses` 为 `(F, 22, 3)`，其中 `poses[:, 0, :] == root_orient`
+- `trans` 为 `(F, 3)`
 
 或：
 

@@ -16,3 +16,30 @@ python3 test/run_batch_test.py --no-static-camera --use-dpvo
 python3 test/run_batch_test.py --no-static-camera --use-dpvo --video-render --video-type mesh_incam,mesh_global
 python3 test/run_batch_test.py --no-download-artifacts
 ```
+
+批量把一个已下载 batch 中所有成功的 `hmr4d_results.pt` 转成 `SMPL-X body-only` 的 `.npz`：
+
+```bash
+python3 test/export_batch_npz.py test/results/<timestamp>__<batch_id>
+```
+
+默认会在该 batch 根目录下生成：
+
+```text
+ouput/
+  README.md
+  index.json
+  index.csv
+  <job_id>__<video_stem>.npz
+```
+
+导出的 `.npz` 约定：
+
+- `model_type = "smplx"`
+- `pose_rep = "body_only"`
+- `coordinate_system = "world_y_up"`
+- `betas` 是序列级 `10D`
+- `root_orient` 是 `(F, 3)`
+- `pose_body` 是 `(F, 63)`
+- `poses` 是 `(F, 22, 3)`，其中 `poses[:, 0, :] == root_orient`
+- `trans` 是 `(F, 3)`
