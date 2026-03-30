@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from gvhmr_batch_api.container import get_settings
 from gvhmr_batch_api.routes.artifacts import router as artifacts_router
 from gvhmr_batch_api.routes.batches import router as batches_router
+from gvhmr_batch_api.routes.dashboard import router as dashboard_router
 from gvhmr_batch_api.routes.health import router as health_router
 from gvhmr_batch_api.routes.jobs import router as jobs_router
 from gvhmr_batch_api.routes.uploads import router as uploads_router
@@ -22,6 +23,7 @@ static_dir = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 app.include_router(web_router)
+app.include_router(dashboard_router)
 app.include_router(health_router)
 app.include_router(uploads_router)
 app.include_router(jobs_router)
@@ -41,4 +43,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

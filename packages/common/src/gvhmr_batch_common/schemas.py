@@ -121,3 +121,11 @@ class HealthResponse(BaseModel):
     app_name: str
     mode: str
     services: dict[str, str]
+
+
+class DashboardOverview(BaseModel):
+    refreshed_at: datetime
+    health: HealthResponse
+    workers: list[WorkerHeartbeatRecord]
+    active_jobs: list[JobRecord]
+    active_batches: list[BatchRecord]

@@ -8,8 +8,7 @@ from gvhmr_batch_common.schemas import HealthResponse
 router = APIRouter(tags=["health"])
 
 
-@router.get("/health", response_model=HealthResponse)
-def health() -> HealthResponse:
+def build_health_response() -> HealthResponse:
     settings = get_settings()
     store = get_store()
 
@@ -46,3 +45,8 @@ def health() -> HealthResponse:
             "minio": storage_status,
         },
     )
+
+
+@router.get("/health", response_model=HealthResponse)
+def health() -> HealthResponse:
+    return build_health_response()

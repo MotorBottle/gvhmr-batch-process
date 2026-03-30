@@ -387,6 +387,40 @@ class ControlPlaneStore:
                 for item in session.scalars(query).all()
             ]
 
+    def list_active_jobs(self, *, limit: int = 20) -> list[JobRecord]:
+        status_order = case(
+            (JobORM.status == JobStatus.RUNNING.value, 3),
+            (JobORM.status == JobStatus.SCHEDULED.value, 2),
+            (JobORM.status == JobStatus.QUEUED.value, 1),
+            else_=0,
+        )
+        with self._session_factory() as session:
+            query = (
+                select(JobORM)
+                .where(
+                    JobORM.status.in_(
+                        [
+                            JobStatus.QUEUED.value,
+                            JobStatus.SCHEDULED.value,
+                            JobStatus.RUNNING.value,
+                        ]
+                    )
+                )
+                .order_by(status_order.desc(), _priority_order().desc(), JobORM.updated_at.desc(), JobORM.created_at.desc())
+                .limit(limit)
+            )
+            return [_to_job_record(item) for item in session.scalars(query).all()]
+
+    def list_active_batches(self, *, limit: int = 20) -> list[BatchRecord]:
+        with self._session_factory() as session:
+            batch_ids = session.scalars(
+                select(BatchORM.id)
+                .where(BatchORM.status.in_([BatchStatus.QUEUED.value, BatchStatus.RUNNING.value]))
+                .order_by(BatchORM.updated_at.desc(), BatchORM.created_at.desc())
+                .limit(limit)
+            ).all()
+            return [self._build_batch_record(session, batch_id) for batch_id in batch_ids]
+
     def list_queued_jobs(self) -> list[JobRecord]:
         now = utcnow()
         with self._session_factory() as session:

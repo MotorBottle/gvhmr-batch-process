@@ -103,12 +103,67 @@
             font-size: 14px;
         }
 
+        .toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+        }
+
         .pill {
             padding: 6px 10px;
             border-radius: 999px;
             background: var(--accent-soft);
             color: var(--accent);
             font-weight: 600;
+        }
+
+        .status-list {
+            display: grid;
+            gap: 8px;
+        }
+
+        .status-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 10px 12px;
+            border-radius: 12px;
+            border: 1px solid var(--line);
+            background: white;
+            font-size: 14px;
+        }
+
+        .status-name {
+            font-weight: 600;
+        }
+
+        .status-value {
+            color: var(--muted);
+            text-align: right;
+            word-break: break-word;
+        }
+
+        .status-value.up, .status-value.idle, .status-value.running {
+            color: var(--accent);
+            font-weight: 600;
+        }
+
+        .status-value.down, .status-value.failed, .status-value.canceled, .status-value.offline {
+            color: #b23a2c;
+            font-weight: 600;
+        }
+
+        .status-value.queued, .status-value.scheduled, .status-value.busy {
+            color: #a96a00;
+            font-weight: 600;
+        }
+
+        .hint {
+            color: var(--muted);
+            font-size: 14px;
         }
     </style>
 </head>
@@ -122,6 +177,50 @@
             <span class="pill">Batch-first</span>
             <span class="pill">Cluster-ready</span>
             <span class="pill">Phase 2 Vertical Slice</span>
+        </div>
+    </section>
+
+    <section class="card" style="margin-bottom: 16px;">
+        <div class="toolbar">
+            <div>
+                <h2>运行面板</h2>
+                <p class="hint">自动轮询显示组件状态、worker 状态、当前活动任务和活动 batch。</p>
+            </div>
+            <div class="meta">
+                <span class="pill">Auto Refresh 5s</span>
+                <span class="pill" id="dashboardUpdatedAt">等待首次刷新</span>
+                <button type="button" id="dashboardRefreshButton" class="secondary">立即刷新</button>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="card">
+                <h2>组件状态</h2>
+                <div id="dashboardServices" class="status-list">
+                    <div class="status-row"><span class="status-name">loading</span><span class="status-value">...</span></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Worker 状态</h2>
+                <div id="dashboardWorkers" class="status-list">
+                    <div class="status-row"><span class="status-name">loading</span><span class="status-value">...</span></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>活动任务</h2>
+                <div id="dashboardJobs" class="status-list">
+                    <div class="status-row"><span class="status-name">loading</span><span class="status-value">...</span></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>活动 Batch</h2>
+                <div id="dashboardBatches" class="status-list">
+                    <div class="status-row"><span class="status-name">loading</span><span class="status-value">...</span></div>
+                </div>
+            </div>
         </div>
     </section>
 
