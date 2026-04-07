@@ -16,6 +16,49 @@ die() {
   exit 1
 }
 
+resolve_gpu_ids() {
+  local ids=()
+  if [[ -n "${WORKER_GPU_IDS:-}" ]]; then
+    IFS=',' read -r -a ids <<<"${WORKER_GPU_IDS}"
+  elif [[ -n "${WORKER_GPU_SLOT:-}" ]]; then
+    ids=("${WORKER_GPU_SLOT}")
+  else
+    local name
+    while IFS= read -r name; do
+      ids+=("${name#GPU}")
+      ids[-1]="${ids[-1]%%_*}"
+    done < <(compgen -A variable | grep -E '^GPU[0-9]+_(VISIBLE_DEVICE|SCRATCH_HOST_PATH)$' || true)
+  fi
+
+  if [[ ${#ids[@]} -eq 0 ]]; then
+    ids=("0")
+  fi
+
+  printf '%s\n' "${ids[@]}" | sed '/^$/d' | sort -n -u
+}
+
+resolve_scratch_path() {
+  local gpu_id="$1"
+  local explicit_key="GPU${gpu_id}_SCRATCH_HOST_PATH"
+  local explicit_value="${!explicit_key:-}"
+  if [[ -n "${explicit_value}" ]]; then
+    echo "${explicit_value}"
+    return
+  fi
+
+  if [[ -n "${WORKER_SCRATCH_ROOT:-}" ]]; then
+    echo "${WORKER_SCRATCH_ROOT%/}/gpu${gpu_id}"
+    return
+  fi
+
+  if [[ -n "${WORKER_SCRATCH_HOST_PATH:-}" ]]; then
+    echo "${WORKER_SCRATCH_HOST_PATH}"
+    return
+  fi
+
+  die "Missing scratch path for GPU ${gpu_id}. Set GPU${gpu_id}_SCRATCH_HOST_PATH or WORKER_SCRATCH_ROOT."
+}
+
 check_cmd() {
   local cmd="$1"
   command -v "$cmd" >/dev/null 2>&1 || die "Missing required command: $cmd"
@@ -86,16 +129,16 @@ nvidia-smi -L >/dev/null 2>&1 || die "nvidia-smi failed. Check driver/runtime in
 [[ -n "${GVHMR_BATCH_WORKER_REDIS_URL:-}" ]] || die "GVHMR_BATCH_WORKER_REDIS_URL is not set."
 [[ -n "${GVHMR_BATCH_WORKER_MINIO_ENDPOINT:-}" ]] || die "GVHMR_BATCH_WORKER_MINIO_ENDPOINT is not set."
 [[ -d "${MODEL_ROOT}" ]] || die "MODEL_ROOT does not exist: ${MODEL_ROOT}"
+[[ -n "${WORKER_NODE_NAME:-}" ]] || die "WORKER_NODE_NAME is not set."
 
-if [[ -n "${WORKER_SCRATCH_HOST_PATH:-}" ]]; then
-  mkdir -p "${WORKER_SCRATCH_HOST_PATH}"
-fi
-if [[ -n "${GPU0_SCRATCH_HOST_PATH:-}" ]]; then
-  mkdir -p "${GPU0_SCRATCH_HOST_PATH}"
-fi
-if [[ -n "${GPU1_SCRATCH_HOST_PATH:-}" ]]; then
-  mkdir -p "${GPU1_SCRATCH_HOST_PATH}"
-fi
+mapfile -t gpu_ids < <(resolve_gpu_ids)
+[[ ${#gpu_ids[@]} -gt 0 ]] || die "No GPU IDs resolved from WORKER_GPU_IDS / WORKER_GPU_SLOT."
+
+available_gpu_ids="$(nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | tr -d ' ' || true)"
+for gpu_id in "${gpu_ids[@]}"; do
+  grep -qx "${gpu_id}" <<<"${available_gpu_ids}" || die "Requested GPU ${gpu_id} is not available on this host."
+  mkdir -p "$(resolve_scratch_path "${gpu_id}")"
+done
 
 read -r pg_host pg_port <<<"$(parse_host_port_from_dsn "${GVHMR_BATCH_WORKER_POSTGRES_DSN}" "5432")"
 read -r redis_host redis_port <<<"$(parse_host_port_from_url "${GVHMR_BATCH_WORKER_REDIS_URL}" "6379")"
@@ -120,4 +163,5 @@ else
   warn "Unable to verify host time sync automatically. Install systemd-timesyncd or chrony."
 fi
 
+info "GPU layout: ${gpu_ids[*]}"
 info "Docker, GPU runtime, model path, scratch paths, network reachability, and time sync checks passed."

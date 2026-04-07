@@ -1,9 +1,10 @@
 PYTHON ?= python3
 TEST_BATCH_ARGS ?=
 WORKER_REMOTE_ENV ?= deploy/env/worker.remote.env
+REMOTE_WORKER_COMPOSE ?= deploy/.generated/compose.worker.remote.generated.yml
 
 .PHONY: tree api-run scheduler-run worker-run compose-local-config compose-local-up compose-local-down \
-	compose-remote-worker-config compose-remote-worker-up compose-remote-worker-down \
+	compose-remote-worker-render compose-remote-worker-config compose-remote-worker-up compose-remote-worker-down \
 	compose-remote-worker-2gpu-config compose-remote-worker-2gpu-up compose-remote-worker-2gpu-down \
 	env-init env-init-force test-batch
 
@@ -37,23 +38,23 @@ compose-local-up:
 compose-local-down:
 	docker compose -f deploy/compose.base.yml -f deploy/compose.control-plane.yml -f deploy/compose.worker.yml down
 
-compose-remote-worker-config:
-	docker compose --env-file $(WORKER_REMOTE_ENV) -f deploy/compose.worker.remote.yml config
+compose-remote-worker-render:
+	$(PYTHON) deploy/scripts/render_remote_worker_compose.py --env-file $(WORKER_REMOTE_ENV) --output $(REMOTE_WORKER_COMPOSE)
 
-compose-remote-worker-up:
-	docker compose --env-file $(WORKER_REMOTE_ENV) -f deploy/compose.worker.remote.yml up --build -d
+compose-remote-worker-config: compose-remote-worker-render
+	docker compose -f $(REMOTE_WORKER_COMPOSE) config
 
-compose-remote-worker-down:
-	docker compose --env-file $(WORKER_REMOTE_ENV) -f deploy/compose.worker.remote.yml down
+compose-remote-worker-up: compose-remote-worker-render
+	docker compose -f $(REMOTE_WORKER_COMPOSE) up --build -d
 
-compose-remote-worker-2gpu-config:
-	docker compose --env-file $(WORKER_REMOTE_ENV) -f deploy/compose.worker.remote.2gpu.yml config
+compose-remote-worker-down: compose-remote-worker-render
+	docker compose -f $(REMOTE_WORKER_COMPOSE) down
 
-compose-remote-worker-2gpu-up:
-	docker compose --env-file $(WORKER_REMOTE_ENV) -f deploy/compose.worker.remote.2gpu.yml up --build -d
+compose-remote-worker-2gpu-config: compose-remote-worker-config
 
-compose-remote-worker-2gpu-down:
-	docker compose --env-file $(WORKER_REMOTE_ENV) -f deploy/compose.worker.remote.2gpu.yml down
+compose-remote-worker-2gpu-up: compose-remote-worker-up
+
+compose-remote-worker-2gpu-down: compose-remote-worker-down
 
 test-batch:
 	$(PYTHON) test/run_batch_test.py $(TEST_BATCH_ARGS)

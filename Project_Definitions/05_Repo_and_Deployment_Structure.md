@@ -14,6 +14,7 @@ repo/
 │   ├── compose.dev.yml
 │   ├── docker/
 │   ├── scripts/
+│   │   └── render_remote_worker_compose.py
 │   └── env/
 ├── models/
 ├── packages/
@@ -108,6 +109,15 @@ repo/
 - 一卡一 worker 容器
 - 同一 `node_name`，不同 `gpu_slot`
 - 独立 host scratch 路径
+- 当前保留为兼容模板
+
+### render_remote_worker_compose.py
+
+- 推荐的远端部署入口
+- 根据 `WORKER_GPU_IDS` 自动生成“任意 GPU 数量、一卡一 worker”的 compose 文件
+- 输出到 `deploy/.generated/compose.worker.remote.generated.yml`
+- 允许远端机器用同一套 env 模板覆盖 1 卡、2 卡、4 卡等场景
+- 当前明确不支持同一物理 GPU 上配置多个 worker
 
 ### compose.dev.yml
 
@@ -134,14 +144,14 @@ repo/
 
 ### Worker
 
-- `WORKER_ID`
-- `NODE_NAME`
-- `GPU_SLOT`
-- `WORKER_VISIBLE_DEVICE`
+- `WORKER_GPU_IDS`
+- `WORKER_NODE_NAME`
 - `WORKER_TORCH_CUDA_ARCH_LIST`
 - `MODEL_ROOT`
-- `SCRATCH_ROOT`
-- `WORKER_SCRATCH_HOST_PATH`
+- `WORKER_SCRATCH_ROOT`
+- `GPU{N}_VISIBLE_DEVICE`（可选覆盖）
+- `GPU{N}_SCRATCH_HOST_PATH`（可选覆盖）
+- `WORKER_GPU_SLOT` / `WORKER_VISIBLE_DEVICE` / `WORKER_SCRATCH_HOST_PATH`（兼容单 worker 旧变量）
 - `HEALTHCHECK_FILE`
 - `HEALTHCHECK_MAX_AGE_SECONDS`
 - `SCRATCH_MIN_FREE_BYTES`
@@ -186,6 +196,7 @@ repo/
 - 远端多 worker 节点默认每个 worker 使用独立 host scratch 目录
 - 如果 Docker data root 已经在本地 SSD，上单 worker 时不强制再单独准备一块盘
 - worker 周期性清理陈旧 job scratch 目录，避免磁盘无限增长
+- 推荐通过 `WORKER_SCRATCH_ROOT` 自动展开为 `.../gpu<gpu_slot>`
 
 ## 6. 迁移原则
 
@@ -214,6 +225,8 @@ repo/
   - `node_name = <机器名>`
   - `worker_id = <node_name>-gpu<gpu_slot>`
 - `gpu_slot` 对应宿主机 `nvidia-smi` 序号
+- 推荐通过 `WORKER_GPU_IDS=0,1,2,...` 生成整组 worker
+- 每个 `gpu_slot` 只允许一个在线 worker
 - 启动时会校验：
   - `worker_id` 未被其他在线 worker 占用
   - `node_name + gpu_slot` 未被其他在线 worker 占用
