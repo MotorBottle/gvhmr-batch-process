@@ -618,13 +618,12 @@ class ControlPlaneStore:
             worker.status = WorkerStatus.BUSY.value
             worker.running_job_id = job.id
 
-            assignment = JobAssignmentORM(
-                id=new_id("asg"),
+            self._create_assignment(
+                session,
                 job_id=job.id,
                 worker_id=worker.id,
                 assigned_at=now,
             )
-            session.add(assignment)
 
             if job.batch_id:
                 self._refresh_batch_state(session, job.batch_id)
@@ -658,6 +657,7 @@ class ControlPlaneStore:
                 .join(JobORM, JobORM.id == JobAssignmentORM.job_id)
                 .where(
                     JobORM.status == JobStatus.SCHEDULED.value,
+                    JobAssignmentORM.completed_at.is_(None),
                     JobAssignmentORM.claimed_at.is_(None),
                     JobAssignmentORM.assigned_at < claim_cutoff,
                 )
@@ -687,7 +687,7 @@ class ControlPlaneStore:
                     if worker.running_job_id == job.id:
                         worker.running_job_id = None
 
-                session.delete(assignment)
+                assignment.completed_at = now
                 requeued_jobs.append((job.id, JobPriority(job.priority)))
                 if job.batch_id:
                     self._refresh_batch_state(session, job.batch_id)
@@ -733,13 +733,12 @@ class ControlPlaneStore:
             worker.status = WorkerStatus.BUSY.value
             worker.running_job_id = job.id
 
-            assignment = JobAssignmentORM(
-                id=new_id("asg"),
+            self._create_assignment(
+                session,
                 job_id=job.id,
                 worker_id=worker.id,
                 assigned_at=now,
             )
-            session.add(assignment)
 
             if job.batch_id:
                 self._refresh_batch_state(session, job.batch_id)
@@ -768,11 +767,11 @@ class ControlPlaneStore:
                 if worker.running_job_id == job_id:
                     worker.running_job_id = None
 
-            assignment = session.scalars(
-                select(JobAssignmentORM).where(JobAssignmentORM.job_id == job_id)
-            ).first()
-            if assignment is not None:
-                session.delete(assignment)
+            self._complete_active_assignment_for_job(
+                session,
+                job_id=job_id,
+                completed_at=now,
+            )
 
             if job.batch_id:
                 self._refresh_batch_state(session, job.batch_id)
@@ -833,9 +832,7 @@ class ControlPlaneStore:
             job.next_retry_at = None
             job.updated_at = now
 
-            assignment = session.scalars(
-                select(JobAssignmentORM).where(JobAssignmentORM.job_id == job.id)
-            ).first()
+            assignment = self._get_active_assignment_for_job(session, job_id=job.id)
             if assignment:
                 assignment.claimed_at = now
 
@@ -981,6 +978,8 @@ class ControlPlaneStore:
 
         if should_retry:
             job.status = JobStatus.QUEUED.value
+            job.assigned_worker_id = None
+            job.assigned_gpu_slot = None
             job.retry_count += 1
             job.error_message = error_message
             job.failure_category = failure_category.value if failure_category else None
@@ -1009,9 +1008,7 @@ class ControlPlaneStore:
                 if worker.running_job_id == job_id:
                     worker.running_job_id = None
 
-        assignment = session.scalars(
-            select(JobAssignmentORM).where(JobAssignmentORM.job_id == job_id)
-        ).first()
+        assignment = self._get_active_assignment_for_job(session, job_id=job_id)
         if assignment:
             assignment.completed_at = assignment.completed_at or now
 
@@ -1033,6 +1030,70 @@ class ControlPlaneStore:
             created_at=batch.created_at,
             updated_at=batch.updated_at,
         )
+
+    def _get_active_assignment_for_job(self, session: Session, *, job_id: str) -> JobAssignmentORM | None:
+        return session.scalars(
+            select(JobAssignmentORM)
+            .where(
+                JobAssignmentORM.job_id == job_id,
+                JobAssignmentORM.completed_at.is_(None),
+            )
+            .order_by(JobAssignmentORM.assigned_at.desc(), JobAssignmentORM.id.desc())
+        ).first()
+
+    def _get_active_assignment_for_worker(self, session: Session, *, worker_id: str) -> JobAssignmentORM | None:
+        return session.scalars(
+            select(JobAssignmentORM)
+            .where(
+                JobAssignmentORM.worker_id == worker_id,
+                JobAssignmentORM.completed_at.is_(None),
+            )
+            .order_by(JobAssignmentORM.assigned_at.desc(), JobAssignmentORM.id.desc())
+        ).first()
+
+    def _complete_active_assignment_for_job(
+        self,
+        session: Session,
+        *,
+        job_id: str,
+        completed_at: datetime,
+    ) -> JobAssignmentORM | None:
+        assignment = self._get_active_assignment_for_job(session, job_id=job_id)
+        if assignment is not None:
+            assignment.completed_at = completed_at
+        return assignment
+
+    def _complete_active_assignment_for_worker(
+        self,
+        session: Session,
+        *,
+        worker_id: str,
+        completed_at: datetime,
+    ) -> JobAssignmentORM | None:
+        assignment = self._get_active_assignment_for_worker(session, worker_id=worker_id)
+        if assignment is not None:
+            assignment.completed_at = completed_at
+        return assignment
+
+    def _create_assignment(
+        self,
+        session: Session,
+        *,
+        job_id: str,
+        worker_id: str,
+        assigned_at: datetime,
+    ) -> JobAssignmentORM:
+        # Close out any stale active attempt rows before opening a new one.
+        self._complete_active_assignment_for_job(session, job_id=job_id, completed_at=assigned_at)
+        self._complete_active_assignment_for_worker(session, worker_id=worker_id, completed_at=assigned_at)
+        assignment = JobAssignmentORM(
+            id=new_id("asg"),
+            job_id=job_id,
+            worker_id=worker_id,
+            assigned_at=assigned_at,
+        )
+        session.add(assignment)
+        return assignment
 
     def _build_batch_counts(self, jobs: Iterable[JobORM]) -> BatchCounts:
         counts = BatchCounts()

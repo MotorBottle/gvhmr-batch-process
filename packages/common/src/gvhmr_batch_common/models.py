@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -98,10 +98,26 @@ class WorkerHeartbeatORM(Base):
 
 class JobAssignmentORM(Base):
     __tablename__ = "job_assignments"
+    __table_args__ = (
+        Index("ix_job_assignments_job_id", "job_id"),
+        Index("ix_job_assignments_worker_id", "worker_id"),
+        Index(
+            "uq_job_assignments_active_job",
+            "job_id",
+            unique=True,
+            postgresql_where=text("completed_at IS NULL"),
+        ),
+        Index(
+            "uq_job_assignments_active_worker",
+            "worker_id",
+            unique=True,
+            postgresql_where=text("completed_at IS NULL"),
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
-    job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id"), nullable=False, unique=True, index=True)
-    worker_id: Mapped[str] = mapped_column(ForeignKey("worker_heartbeats.id"), nullable=False, index=True)
+    job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id"), nullable=False)
+    worker_id: Mapped[str] = mapped_column(ForeignKey("worker_heartbeats.id"), nullable=False)
     assigned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
