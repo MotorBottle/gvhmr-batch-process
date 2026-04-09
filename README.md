@@ -326,10 +326,12 @@ make test-batch
 - `test/results/`：保存 batch 状态和下载回来的产物，已加入 git ignore
 - `test/run_batch_test.py`：批量上传 `test/uploads/` 下的视频，创建 batch，轮询完成，并把产物写入 `test/results/<timestamp>__<batch_id>/`
 - `test/export_batch_npz.py`：把一个已下载 batch 中所有成功 job 的 `hmr4d_results.pt` 导出成 `SMPL-X body-only` 的 `.npz`
-- 下载后的 job 目录会按 `job_id__原始文件名` 命名，并额外生成：
+- 下载后的成功 job 会放到 `succeeded/`，失败或取消的 job 会放到 `failed/`
+- 每个 job 目录会按 `job_id__原始文件名` 命名，并额外生成：
   - `job_index.json`
   - `job_index.csv`
   用来记录 `结果文件夹名 -> job_id -> upload_filename -> source_path`
+- `failed/` 下会尽量保留原始输入视频，方便 debug
 
 示例：
 

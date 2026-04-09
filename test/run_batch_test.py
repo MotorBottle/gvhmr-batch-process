@@ -4,6 +4,7 @@ import argparse
 import csv
 import json
 import mimetypes
+import shutil
 import sys
 import time
 import uuid
@@ -124,6 +125,7 @@ def save_csv(path: Path, rows: list[dict[str, str]]) -> None:
 
     fieldnames = [
         "job_id",
+        "result_group",
         "result_dir_name",
         "result_dir",
         "upload_id",
@@ -170,6 +172,10 @@ def job_result_dir_name(job: dict, upload_meta: dict | None = None) -> str:
     return f"{job['id']}__{safe_label(Path(upload_filename).stem)}"
 
 
+def job_result_group(job: dict) -> str:
+    return "succeeded" if job.get("status") == "succeeded" else "failed"
+
+
 def poll_batch(base_url: str, batch_id: str, results_dir: Path, poll_seconds: float) -> dict:
     last_snapshot = None
     while True:
@@ -212,13 +218,15 @@ def download_batch_artifacts(base_url: str, batch: dict, batch_dir: Path, upload
         source_path = upload_meta.get("source_path")
         upload_filename = job.get("upload_filename") or upload_meta.get("upload", {}).get("filename")
         result_dir_name = job_result_dir_name(job, upload_meta)
-        job_dir = batch_dir / result_dir_name
+        result_group = job_result_group(job)
+        job_dir = batch_dir / result_group / result_dir_name
 
         save_json(job_dir / "job.json", job)
         save_json(job_dir / "artifacts.json", artifacts)
         job_index.append(
             {
                 "job_id": job["id"],
+                "result_group": result_group,
                 "result_dir_name": result_dir_name,
                 "upload_id": job["upload_id"],
                 "upload_filename": upload_filename,
@@ -235,6 +243,14 @@ def download_batch_artifacts(base_url: str, batch: dict, batch_dir: Path, upload
             artifact_path = job_dir / artifact["kind"] / artifact_filename
             download_file(f"{base_url.rstrip('/')}/artifacts/{artifact['id']}/download", artifact_path)
             print(f"[artifact] job={job_id} saved={artifact_path}")
+
+        if result_group == "failed" and source_path and upload_filename:
+            source_video = Path(source_path)
+            debug_video_path = job_dir / "input_video" / upload_filename
+            if source_video.exists() and not debug_video_path.exists():
+                debug_video_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source_video, debug_video_path)
+                print(f"[artifact] job={job_id} copied-debug-input={debug_video_path}")
 
     save_json(batch_dir / "job_index.json", job_index)
     save_csv(batch_dir / "job_index.csv", job_index)

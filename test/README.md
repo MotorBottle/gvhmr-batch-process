@@ -3,9 +3,23 @@
 - 把待测视频放进 `test/uploads/`
 - 运行 `python3 test/run_batch_test.py`
 - 结果会写到 `test/results/<timestamp>__<batch_id>/`
+- 成功 job 会放到 `succeeded/`，失败或取消的 job 会放到 `failed/`
 - 每个 job 的结果目录会带上原始文件名
+- `failed/` 下的每个 job 目录都会尽量带上原始输入视频，方便排查
 - batch 根目录下会生成 `job_index.json` 和 `job_index.csv`
 - `job_index.csv` 里可直接按 `result_dir_name` 或 `job_id` 反查原始输入文件
+
+结果目录结构示例：
+
+```text
+test/results/<timestamp>__<batch_id>/
+  succeeded/
+    job_xxx__video_a/
+  failed/
+    job_yyy__video_b/
+  job_index.json
+  job_index.csv
+```
 
 常用示例：
 
