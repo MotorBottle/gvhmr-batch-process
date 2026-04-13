@@ -72,6 +72,7 @@ def _to_upload_record(model: UploadORM) -> UploadRecord:
         size_bytes=model.size_bytes,
         sha256=model.sha256,
         storage_key=model.storage_key,
+        source_fps=model.source_fps,
         created_at=model.created_at,
     )
 
@@ -199,7 +200,14 @@ class ControlPlaneStore:
         self._storage.ensure_bucket()
         return True
 
-    def create_upload(self, *, filename: str, content_type: str, payload: bytes) -> UploadRecord:
+    def create_upload(
+        self,
+        *,
+        filename: str,
+        content_type: str,
+        payload: bytes,
+        source_fps: float | None = None,
+    ) -> UploadRecord:
         if self._storage is None:
             raise RuntimeError("Storage backend is not configured.")
 
@@ -218,6 +226,7 @@ class ControlPlaneStore:
             size_bytes=len(payload),
             sha256=digest,
             storage_key=storage_key,
+            source_fps=source_fps,
             created_at=utcnow(),
         )
         with self._session_factory() as session:

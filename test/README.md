@@ -57,3 +57,4 @@ ouput/
 - `pose_body` 是 `(F, 63)`
 - `poses` 是 `(F, 22, 3)`，其中 `poses[:, 0, :] == root_orient`
 - `trans` 是 `(F, 3)`
+- `mocap_frame_rate` 会优先使用原始上传视频的真实 fps；只有拿不到原始 fps 时才回退到结果目录中的 `input_video` 或默认值

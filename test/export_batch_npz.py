@@ -59,6 +59,46 @@ def safe_label(value: str | None) -> str:
     return "".join(ch if ch.isalnum() or ch in {"-", "_", "."} else "_" for ch in cleaned).strip("._") or "unknown"
 
 
+def resolve_result_dir(batch_dir: Path, item: dict) -> Path:
+    raw_result_dir = item.get("result_dir")
+    if raw_result_dir:
+        result_dir = Path(raw_result_dir)
+        if result_dir.exists():
+            return result_dir
+
+    result_group = item.get("result_group")
+    result_dir_name = item.get("result_dir_name")
+    if result_group and result_dir_name:
+        candidate = batch_dir / result_group / result_dir_name
+        if candidate.exists():
+            return candidate
+
+    if result_dir_name:
+        legacy_candidate = batch_dir / result_dir_name
+        if legacy_candidate.exists():
+            return legacy_candidate
+
+    if raw_result_dir:
+        return Path(raw_result_dir)
+    if result_group and result_dir_name:
+        return batch_dir / result_group / result_dir_name
+    if result_dir_name:
+        return batch_dir / result_dir_name
+    return batch_dir
+
+
+def parse_source_fps(value) -> float | None:
+    if value in {None, ""}:
+        return None
+    try:
+        fps = float(value)
+    except (TypeError, ValueError):
+        return None
+    if math.isfinite(fps) and fps > 0:
+        return fps
+    return None
+
+
 def infer_video_fps(video_path: Path, default_fps: float) -> float:
     ffprobe = shutil_which("ffprobe")
     if ffprobe is None or not video_path.exists():
@@ -235,7 +275,7 @@ def main() -> int:
 
     for item in job_index:
         job_id = item["job_id"]
-        result_dir = Path(item["result_dir"])
+        result_dir = resolve_result_dir(batch_dir, item)
         job_json_path = result_dir / "job.json"
         pt_path = result_dir / "hmr4d_results" / "hmr4d_results.pt"
         video_filename = item.get("upload_filename") or "unknown.mp4"
@@ -252,9 +292,23 @@ def main() -> int:
             if isinstance(job, dict):
                 status = job.get("status", status)
 
-        input_video_candidates = sorted((result_dir / "input_video").glob("*"))
-        if input_video_candidates:
-            fps = infer_video_fps(input_video_candidates[0], default_fps=args.default_fps)
+        source_fps = parse_source_fps(item.get("source_fps"))
+        if source_fps is not None:
+            fps = source_fps
+        else:
+            source_path = item.get("source_path")
+            if source_path:
+                source_path_obj = Path(source_path)
+                if source_path_obj.exists():
+                    fps = infer_video_fps(source_path_obj, default_fps=args.default_fps)
+                else:
+                    input_video_candidates = sorted((result_dir / "input_video").glob("*"))
+                    if input_video_candidates:
+                        fps = infer_video_fps(input_video_candidates[0], default_fps=args.default_fps)
+            else:
+                input_video_candidates = sorted((result_dir / "input_video").glob("*"))
+                if input_video_candidates:
+                    fps = infer_video_fps(input_video_candidates[0], default_fps=args.default_fps)
 
         if status == TERMINAL_SUCCESS_STATUS and pt_path.exists():
             payload = convert_pt_to_npz_payload(pt_path, fps=fps, betas_agg=args.betas_agg)

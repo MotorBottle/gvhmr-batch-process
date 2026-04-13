@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -19,6 +19,7 @@ class UploadORM(Base):
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     sha256: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     storage_key: Mapped[str] = mapped_column(String(1024), nullable=False)
+    source_fps: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     jobs: Mapped[list["JobORM"]] = relationship(back_populates="upload")

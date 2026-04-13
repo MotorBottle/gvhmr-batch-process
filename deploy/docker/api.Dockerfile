@@ -5,6 +5,10 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY alembic /app/alembic
 COPY alembic.ini /app/alembic.ini
 COPY packages/common /app/packages/common

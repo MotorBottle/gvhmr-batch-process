@@ -352,6 +352,8 @@ python3 test/export_batch_npz.py test/results/<timestamp>__<batch_id>
 - `index.csv`
 - `<job_id>__<video_stem>.npz`
 
+`.npz` 中的 `mocap_frame_rate` 会优先继承原始上传视频的真实 fps；只有原始 fps 不可用时才会回退到结果目录中的 `input_video` 或默认值。
+
 这批 `.npz` 的约定是：
 
 - `model_type = "smplx"`

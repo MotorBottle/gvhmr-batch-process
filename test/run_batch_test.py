@@ -5,6 +5,7 @@ import csv
 import json
 import mimetypes
 import shutil
+import subprocess
 import sys
 import time
 import uuid
@@ -112,6 +113,58 @@ def download_file(url: str, destination: Path) -> None:
         raise RuntimeError(f"Download failed for {url}: {exc}") from exc
 
 
+def infer_video_fps(video_path: Path) -> float | None:
+    ffprobe = shutil.which("ffprobe")
+    if ffprobe is None or not video_path.exists():
+        return None
+
+    request = [
+        ffprobe,
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "stream=avg_frame_rate,r_frame_rate",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        str(video_path),
+    ]
+    try:
+        output = subprocess.check_output(request, text=True, stderr=subprocess.DEVNULL).strip().splitlines()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+
+    for value in output:
+        fps = parse_ffprobe_rate(value)
+        if fps is not None:
+            return fps
+    return None
+
+
+def parse_ffprobe_rate(value: str) -> float | None:
+    value = value.strip()
+    if not value or value == "0/0":
+        return None
+    if "/" in value:
+        numerator, denominator = value.split("/", 1)
+        try:
+            numerator_value = float(numerator)
+            denominator_value = float(denominator)
+        except ValueError:
+            return None
+        if denominator_value == 0:
+            return None
+        fps = numerator_value / denominator_value
+    else:
+        try:
+            fps = float(value)
+        except ValueError:
+            return None
+
+    return fps if fps > 0 else None
+
+
 def save_json(path: Path, payload: dict | list) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -131,6 +184,7 @@ def save_csv(path: Path, rows: list[dict[str, str]]) -> None:
         "upload_id",
         "upload_filename",
         "source_path",
+        "source_fps",
         "status",
     ]
     with path.open("w", encoding="utf-8", newline="") as fp:
@@ -216,6 +270,9 @@ def download_batch_artifacts(base_url: str, batch: dict, batch_dir: Path, upload
         artifacts = request_json("GET", f"{base_url.rstrip('/')}/jobs/{job_id}/artifacts")
         upload_meta = uploads_by_id.get(job["upload_id"], {})
         source_path = upload_meta.get("source_path")
+        source_fps = upload_meta.get("source_fps")
+        if source_fps is None:
+            source_fps = upload_meta.get("upload", {}).get("source_fps")
         upload_filename = job.get("upload_filename") or upload_meta.get("upload", {}).get("filename")
         result_dir_name = job_result_dir_name(job, upload_meta)
         result_group = job_result_group(job)
@@ -231,6 +288,7 @@ def download_batch_artifacts(base_url: str, batch: dict, batch_dir: Path, upload
                 "upload_id": job["upload_id"],
                 "upload_filename": upload_filename,
                 "source_path": source_path,
+                "source_fps": source_fps,
                 "status": job["status"],
                 "result_dir": str(job_dir),
             }
@@ -268,7 +326,13 @@ def main() -> int:
     uploads = []
     for video_path in videos:
         upload = upload_file(base_url, video_path)
-        uploads.append({"source_path": str(video_path), "upload": upload})
+        uploads.append(
+            {
+                "source_path": str(video_path),
+                "source_fps": upload.get("source_fps") if upload.get("source_fps") is not None else infer_video_fps(video_path),
+                "upload": upload,
+            }
+        )
         print(f"[upload] {video_path.name} -> {upload['id']}")
 
     batch_name = args.batch_name or f"test-batch-{time.strftime('%Y%m%d-%H%M%S')}"

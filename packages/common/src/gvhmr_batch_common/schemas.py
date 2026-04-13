@@ -21,6 +21,7 @@ class UploadRecord(BaseModel):
     size_bytes: int
     sha256: str
     storage_key: str
+    source_fps: float | None = None
     created_at: datetime
 
 
